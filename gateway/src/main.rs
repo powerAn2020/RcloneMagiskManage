@@ -1341,7 +1341,13 @@ fn token_client(h: &HeaderMap, s: &AppState) -> Result<String> {
 }
 fn scope(h: &HeaderMap, s: &AppState, name: &str) -> Result<String> {
     let id = token_client(h, s)?;
-    let ok:Option<i64>=db(s)?.query_row("SELECT 1 FROM permission_grant WHERE client_id=? AND (scope=? OR scope='*') AND (expires_at IS NULL OR expires_at>?) LIMIT 1",params![id,name,now()],|r|r.get(0)).optional()?;
+    let ok: Option<i64> = db(s)?
+        .query_row(
+            "SELECT 1 FROM permission_grant WHERE client_id=? AND (scope=? OR scope='*' OR scope='admin.*') AND (expires_at IS NULL OR expires_at>?) LIMIT 1",
+            params![id, name, now()],
+            |r| r.get(0),
+        )
+        .optional()?;
     if ok.is_none() {
         return Err(GatewayError::Message(format!("AUTH scope denied: {name}")));
     }
@@ -2052,6 +2058,7 @@ async fn pair_complete(
         "job.read",
         "mount.read",
         "audit.read",
+        "security.read",
     ] {
         c.execute(
             "INSERT INTO permission_grant(client_id,scope,resource) VALUES(?,?,?)",
@@ -2059,10 +2066,23 @@ async fn pair_complete(
         )?;
     }
     if first_client {
-        c.execute(
-            "INSERT INTO permission_grant(client_id,scope,resource) VALUES(?,?,?)",
-            params![id, "security.write", "*"],
-        )?;
+        for admin_scope in [
+            "remote.write",
+            "remote.delete",
+            "file.write",
+            "file.delete",
+            "job.execute",
+            "job.control",
+            "mount.write",
+            "security.write",
+            "admin.*",
+            "*",
+        ] {
+            c.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource) VALUES(?,?,?)",
+                params![id, admin_scope, "*"],
+            )?;
+        }
     }
     // Give the first trusted client read access to remotes imported before
     // pairing. Further clients must receive explicit Remote ACL grants.

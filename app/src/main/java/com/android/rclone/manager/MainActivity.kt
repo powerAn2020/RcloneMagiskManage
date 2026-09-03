@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Folder
@@ -120,27 +121,6 @@ private fun RcloneApp(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = if (selectedTab == 4) "更多 · ${moreSubTabs[moreSubTab]}" else navTabs[selectedTab],
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Android Rclone Root Manager V1.1.0",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        },
         bottomBar = {
             NavigationBar {
                 navTabs.forEachIndexed { index, label ->
@@ -154,87 +134,99 @@ private fun RcloneApp(
             }
         }
     ) { padding ->
-        when (selectedTab) {
-            0 -> DashboardScreen(
-                padding = padding,
-                client = client,
-                bearer = bearer,
-                onNavigateTab = { target ->
-                    if (target == 4) {
-                        moreSubTab = 0
+        val screenPadding = PaddingValues(
+            start = 0.dp,
+            top = 0.dp,
+            end = 0.dp,
+            bottom = padding.calculateBottomPadding()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+        ) {
+            when (selectedTab) {
+                0 -> DashboardScreen(
+                    padding = screenPadding,
+                    client = client,
+                    bearer = bearer,
+                    onNavigateTab = { target ->
+                        if (target == 4) {
+                            moreSubTab = 0
+                        }
+                        selectedTab = target
+                    },
+                    onEditToken = { showTokenEditor = true },
+                    onTokenUpdated = onTokenChanged,
+                    onShowMessage = showMessage
+                )
+                1 -> RemotesScreen(
+                    padding = screenPadding,
+                    client = client,
+                    bearer = bearer,
+                    onNavigateToFileBrowser = { remoteId ->
+                        activeRemoteForFiles = remoteId
+                        selectedTab = 2
+                    },
+                    onShowMessage = showMessage
+                )
+                2 -> FilesScreen(
+                    padding = screenPadding,
+                    client = client,
+                    bearer = bearer,
+                    initialRemoteId = activeRemoteForFiles,
+                    onShowMessage = showMessage
+                )
+                3 -> JobsScreen(
+                    padding = screenPadding,
+                    client = client,
+                    bearer = bearer,
+                    onShowMessage = showMessage
+                )
+                4 -> Column(modifier = Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
+                    ScrollableTabRow(
+                        selectedTabIndex = moreSubTab,
+                        modifier = Modifier.fillMaxWidth(),
+                        edgePadding = 16.dp
+                    ) {
+                        moreSubTabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = moreSubTab == index,
+                                onClick = { moreSubTab = index },
+                                text = { Text(title, fontWeight = FontWeight.SemiBold) }
+                            )
+                        }
                     }
-                    selectedTab = target
-                },
-                onEditToken = { showTokenEditor = true },
-                onTokenUpdated = onTokenChanged,
-                onShowMessage = showMessage
-            )
-            1 -> RemotesScreen(
-                padding = padding,
-                client = client,
-                bearer = bearer,
-                onNavigateToFileBrowser = { remoteId ->
-                    activeRemoteForFiles = remoteId
-                    selectedTab = 2
-                },
-                onShowMessage = showMessage
-            )
-            2 -> FilesScreen(
-                padding = padding,
-                client = client,
-                bearer = bearer,
-                initialRemoteId = activeRemoteForFiles,
-                onShowMessage = showMessage
-            )
-            3 -> JobsScreen(
-                padding = padding,
-                client = client,
-                bearer = bearer,
-                onShowMessage = showMessage
-            )
-            4 -> Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                ScrollableTabRow(
-                    selectedTabIndex = moreSubTab,
-                    modifier = Modifier.fillMaxWidth(),
-                    edgePadding = 16.dp
-                ) {
-                    moreSubTabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = moreSubTab == index,
-                            onClick = { moreSubTab = index },
-                            text = { Text(title, fontWeight = FontWeight.SemiBold) }
-                        )
-                    }
-                }
-                Box(modifier = Modifier.weight(1f)) {
-                    when (moreSubTab) {
-                        0 -> MountsScreen(
-                            padding = PaddingValues(0.dp),
-                            client = client,
-                            bearer = bearer,
-                            onShowMessage = showMessage
-                        )
-                        1 -> CryptScreen(
-                            padding = PaddingValues(0.dp),
-                            client = client,
-                            bearer = bearer,
-                            onShowMessage = showMessage
-                        )
-                        2 -> SecurityScreen(
-                            padding = PaddingValues(0.dp),
-                            client = client,
-                            bearer = bearer,
-                            tokenStore = tokenStore,
-                            onTokenUpdated = onTokenChanged,
-                            onShowMessage = showMessage
-                        )
-                        3 -> SettingsScreen(
-                            padding = PaddingValues(0.dp),
-                            client = client,
-                            bearer = bearer,
-                            onEditToken = { showTokenEditor = true },
-                            onShowMessage = showMessage
-                        )
+                    Box(modifier = Modifier.weight(1f)) {
+                        when (moreSubTab) {
+                            0 -> MountsScreen(
+                                padding = PaddingValues(0.dp),
+                                client = client,
+                                bearer = bearer,
+                                onShowMessage = showMessage
+                            )
+                            1 -> CryptScreen(
+                                padding = PaddingValues(0.dp),
+                                client = client,
+                                bearer = bearer,
+                                onShowMessage = showMessage
+                            )
+                            2 -> SecurityScreen(
+                                padding = PaddingValues(0.dp),
+                                client = client,
+                                bearer = bearer,
+                                tokenStore = tokenStore,
+                                onTokenUpdated = onTokenChanged,
+                                onShowMessage = showMessage
+                            )
+                            3 -> SettingsScreen(
+                                padding = PaddingValues(0.dp),
+                                client = client,
+                                bearer = bearer,
+                                onEditToken = { showTokenEditor = true },
+                                onShowMessage = showMessage
+                            )
+                        }
                     }
                 }
             }

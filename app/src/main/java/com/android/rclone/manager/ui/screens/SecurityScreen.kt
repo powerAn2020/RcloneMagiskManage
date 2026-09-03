@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
@@ -133,14 +134,36 @@ fun SecurityScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        scope.launch {
+                            client.autoPair().fold(
+                                onSuccess = { token ->
+                                    tokenStore.write(token)
+                                    onTokenUpdated(token)
+                                    onShowMessage("配对成功！Token 已自动加密保存并生效")
+                                    loadClients()
+                                },
+                                onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Bolt, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("本机一键自动配对 (推荐)")
+                }
+                Spacer(Modifier.height(6.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    OutlinedButton(
                         onClick = {
                             scope.launch {
                                 client.pairingStart().fold(
                                     onSuccess = { res ->
                                         val code = JSONObject(res).optString("pairingCode")
                                         pairingCodeInfo = code
+                                        onShowMessage("已生成新配对码: $code (300 秒有效)")
                                     },
                                     onFailure = { onShowMessage("启动配对失败: ${it.message}") }
                                 )
@@ -148,13 +171,13 @@ fun SecurityScreen(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("获取配对码")
+                        Text("获取新配对码")
                     }
                     OutlinedButton(
                         onClick = { showPairingCompleteDialog = true },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("完成配对并导入")
+                        Text("手动完成配对")
                     }
                 }
                 pairingCodeInfo?.let { code ->
@@ -282,11 +305,44 @@ fun SecurityScreen(
         var codeInput by remember { mutableStateOf(TextFieldValue(pairingCodeInfo ?: "")) }
         var nameInput by remember { mutableStateOf(TextFieldValue("Android Controller")) }
         var pubKeyInput by remember { mutableStateOf(TextFieldValue("local-controller-pubkey")) }
+
+        LaunchedEffect(pairingCodeInfo) {
+            pairingCodeInfo?.let { code ->
+                if (code.isNotBlank()) {
+                    codeInput = TextFieldValue(code)
+                }
+            }
+        }
+
         AlertDialog(
             onDismissRequest = { showPairingCompleteDialog = false },
             title = { Text("完成配对交换", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("配对参数", style = MaterialTheme.typography.labelMedium)
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    client.pairingStart().fold(
+                                        onSuccess = { res ->
+                                            val code = JSONObject(res).optString("pairingCode")
+                                            pairingCodeInfo = code
+                                            codeInput = TextFieldValue(code)
+                                            onShowMessage("已生成最新配对码: $code")
+                                        },
+                                        onFailure = { onShowMessage("生成配对码失败: ${it.message}") }
+                                    )
+                                }
+                            }
+                        ) {
+                            Text("刷新生成配对码")
+                        }
+                    }
                     MaterialTextField(value = codeInput, onValueChange = { codeInput = it }, label = "6 位配对码")
                     MaterialTextField(value = nameInput, onValueChange = { nameInput = it }, label = "客户端名称")
                     MaterialTextField(value = pubKeyInput, onValueChange = { pubKeyInput = it }, label = "公钥字符串 (HMAC 身份标识)")
@@ -313,9 +369,20 @@ fun SecurityScreen(
                                         showPairingCompleteDialog = false
                                         loadClients()
                                     },
-                                    onFailure = { onShowMessage("配对失败: ${it.message}") }
+                                    onFailure = { err ->
+                                        val msg = err.message ?: ""
+                                        val friendly = when {
+                                            msg.contains("AUTH_INVALID") || msg.contains("expired") ->
+                                                "配对码已失效或不存在，请点击上方「刷新生成配对码」"
+                                            msg.contains("Connection refused") -> "Gateway 离线，请先拉起服务"
+                                            else -> "配对失败: $msg"
+                                        }
+                                        onShowMessage(friendly)
+                                    }
                                 )
                             }
+                        } else {
+                            onShowMessage("请填写完整配对参数")
                         }
                     }
                 ) { Text("提交配对") }
