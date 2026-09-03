@@ -55,6 +55,14 @@ import androidx.compose.material3.TextButton as M3TextButton
 import androidx.compose.material3.TextField as M3TextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.android.rclone.manager.data.model.RemoteSummary
+import com.android.rclone.manager.data.model.parseRemotes
+import com.android.rclone.manager.ui.component.ContentCard
+import com.android.rclone.manager.ui.component.MaterialDialog
+import com.android.rclone.manager.ui.component.MaterialTextField
+import com.android.rclone.manager.ui.component.PreferenceRow
+import com.android.rclone.manager.ui.component.SectionTitle
+import com.android.rclone.manager.ui.component.TogglePreference
 
 class MainActivity : ComponentActivity() {
     private val client = GatewayClient()
@@ -84,31 +92,6 @@ class MainActivity : ComponentActivity() {
         androidx.compose.material3.TopAppBar(title = { Column { Text(title); Text(subtitle, style = MaterialTheme.typography.labelSmall) } })
     }
 
-    @Composable private fun SmallTitle(text: String) { Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
-
-    @Composable private fun Card(modifier: Modifier = Modifier, insideMargin: PaddingValues = PaddingValues(16.dp), onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
-        val body: @Composable () -> Unit = { Column(Modifier.padding(insideMargin), verticalArrangement = Arrangement.spacedBy(4.dp)) { content() } }
-        if (onClick != null) M3Card(onClick = onClick, modifier = modifier, content = { body() }) else M3Card(modifier = modifier, content = { body() })
-    }
-
-    @Composable private fun ArrowPreference(title: String, summary: String, onClick: () -> Unit) {
-        androidx.compose.material3.ListItem(headlineContent = { Text(title) }, supportingContent = { Text(summary) }, modifier = Modifier.fillMaxWidth(), trailingContent = { Text("›") })
-        androidx.compose.material3.TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("打开") }
-    }
-
-    @Composable private fun SwitchPreference(checked: Boolean, onCheckedChange: (Boolean) -> Unit, title: String, summary: String) {
-        androidx.compose.material3.ListItem(headlineContent = { Text(title) }, supportingContent = { Text(summary) }, trailingContent = { Switch(checked, onCheckedChange) })
-    }
-
-    @Composable private fun TextButton(text: String, onClick: () -> Unit) { M3TextButton(onClick = onClick) { Text(text) } }
-
-    @Composable private fun TextField(value: TextFieldValue, onValueChange: (TextFieldValue) -> Unit, label: String, singleLine: Boolean, visualTransformation: androidx.compose.ui.text.input.VisualTransformation) {
-        M3TextField(value = value, onValueChange = onValueChange, label = { Text(label) }, singleLine = singleLine, visualTransformation = visualTransformation)
-    }
-
-    @Composable private fun OverlayDialog(show: Boolean, title: String, summary: String? = null, onDismissRequest: () -> Unit, content: @Composable () -> Unit) {
-        if (show) AlertDialog(onDismissRequest = onDismissRequest, title = { Text(title) }, text = { Column { summary?.let { Text(it); Spacer(Modifier.height(8.dp)) }; content() } }, confirmButton = {})
-    }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -156,9 +139,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Dashboard(padding: PaddingValues, result: String, bearer: String, onResult: (String) -> Unit) {
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item { SmallTitle(text = "系统状态") }
+            item { SectionTitle(text = "系统状态") }
             item {
-                Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(18.dp)) {
+                ContentCard(Modifier.fillMaxWidth(), insideMargin = PaddingValues(18.dp)) {
                     Text("Gateway / rclone", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(6.dp))
                     Text(if (result.startsWith("{") || result.contains("ok", true)) "在线" else "检查失败", style = MaterialTheme.typography.bodyMedium)
@@ -166,7 +149,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             item {
-                Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(18.dp)) {
+                ContentCard(Modifier.fillMaxWidth(), insideMargin = PaddingValues(18.dp)) {
                     Text(if (bearer.isBlank()) "认证未配置" else "认证已配置", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
                     Text("Token 使用 Android Keystore 加密保存", style = MaterialTheme.typography.bodyMedium)
@@ -175,9 +158,9 @@ class MainActivity : ComponentActivity() {
                     TextButton(text = "设置 Token", onClick = { onResult("__edit_token__") })
                 }
             }
-            item { SmallTitle(text = "WebDAV 测试") }
+            item { SectionTitle(text = "WebDAV 测试") }
             item {
-                Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(18.dp)) {
+                ContentCard(Modifier.fillMaxWidth(), insideMargin = PaddingValues(18.dp)) {
                     Text("WebDAV 配置已就绪", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
                     Text("Provider → rclone → FUSE3 → bind mount", style = MaterialTheme.typography.bodyMedium)
@@ -188,7 +171,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            item { SmallTitle(text = "快捷操作") }
+            item { SectionTitle(text = "快捷操作") }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(modifier = Modifier.weight(1f), onClick = { createRemote() }) { Text("添加远端") }
@@ -202,9 +185,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun TokenEditor(show: Boolean, initialValue: String, onDismiss: () -> Unit) {
         var value by remember(show, initialValue) { mutableStateOf(TextFieldValue(initialValue)) }
-        OverlayDialog(show = show, title = "Gateway Token", summary = "使用 Android Keystore 加密保存，不会显示在日志中。", onDismissRequest = onDismiss) {
+        MaterialDialog(show = show, title = "Gateway Token", summary = "使用 Android Keystore 加密保存，不会显示在日志中。", onDismissRequest = onDismiss) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextField(value = value, onValueChange = { value = it }, label = "Token", singleLine = true, visualTransformation = PasswordVisualTransformation())
+                MaterialTextField(value = value, onValueChange = { value = it }, label = "Token", singleLine = true, visualTransformation = PasswordVisualTransformation())
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(text = "取消", onClick = onDismiss)
                     TextButton(text = "保存", onClick = {
@@ -222,7 +205,7 @@ class MainActivity : ComponentActivity() {
     private fun PromptDialog(request: PromptRequest?, onDismiss: () -> Unit) {
         if (request == null) return
         var values by remember(request) { mutableStateOf(request.hints.map { TextFieldValue("") }) }
-        OverlayDialog(show = true, title = request.title, onDismissRequest = onDismiss) {
+        MaterialDialog(show = true, title = request.title, onDismissRequest = onDismiss) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 values.forEachIndexed { index, current ->
                     TextField(
@@ -247,7 +230,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ConfirmDialog(request: ConfirmRequest?, onDismiss: () -> Unit) {
         if (request == null) return
-        OverlayDialog(show = true, title = request.title, summary = request.message, onDismissRequest = onDismiss) {
+        MaterialDialog(show = true, title = request.title, summary = request.message, onDismissRequest = onDismiss) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(text = "取消", onClick = onDismiss)
                 TextButton(text = request.confirmLabel, onClick = { request.onConfirm(); onDismiss() })
@@ -263,15 +246,15 @@ class MainActivity : ComponentActivity() {
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    SmallTitle(text = "远端列表")
+                    SectionTitle(text = "远端列表")
                     TextButton(text = "添加", onClick = { createRemote() })
                 }
             }
             if (remotes.isEmpty()) {
-                item { Card(Modifier.fillMaxWidth()) { Text(if (raw == null) "正在加载…" else "暂无远端或返回格式无法识别") } }
+                item { ContentCard(Modifier.fillMaxWidth()) { Text(if (raw == null) "正在加载…" else "暂无远端或返回格式无法识别") } }
             } else {
                 items(remotes) { remote ->
-                    Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                    ContentCard(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                         Text(remote.name)
                         Text("${remote.type} · ${if (remote.enabled) "已启用" else "已禁用"}")
                         if (remote.endpoint.isNotBlank()) Text(remote.endpoint)
@@ -331,25 +314,25 @@ class MainActivity : ComponentActivity() {
     private fun MorePage(padding: PaddingValues, bearer: String, result: String, onResult: (String) -> Unit) {
         var safeEnabled by remember { mutableStateOf(false) }
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item { SmallTitle(text = "挂载与运行") }
+            item { SectionTitle(text = "挂载与运行") }
             item {
-                Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
-                    ArrowPreference(title = "挂载配置", summary = "查看 Mount profile、缓存、FUSE3 与 bind 状态", onClick = { scope.launch { onResult(client.mounts(bearer).fold({ it }, { "错误：${it.message}" })) } })
-                    ArrowPreference(title = "任务策略", summary = "网络、电量、并发与调度策略", onClick = { scope.launch { onResult(client.jobs(bearer).fold({ it }, { "错误：${it.message}" })) } })
+                ContentCard(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                    PreferenceRow(title = "挂载配置", summary = "查看 Mount profile、缓存、FUSE3 与 bind 状态", onClick = { scope.launch { onResult(client.mounts(bearer).fold({ it }, { "错误：${it.message}" })) } })
+                    PreferenceRow(title = "任务策略", summary = "网络、电量、并发与调度策略", onClick = { scope.launch { onResult(client.jobs(bearer).fold({ it }, { "错误：${it.message}" })) } })
                 }
             }
-            item { SmallTitle(text = "安全与数据") }
+            item { SectionTitle(text = "安全与数据") }
             item {
-                Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
-                    ArrowPreference(title = "配对客户端", summary = "Scope、Remote ACL、撤销与 Token 轮换", onClick = { scope.launch { onResult(client.clients(bearer).fold({ it }, { "错误：${it.message}" })) } })
-                    ArrowPreference(title = "创建备份", summary = "备份数据库、配置与加密密钥包", onClick = { createBackup() })
+                ContentCard(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                    PreferenceRow(title = "配对客户端", summary = "Scope、Remote ACL、撤销与 Token 轮换", onClick = { scope.launch { onResult(client.clients(bearer).fold({ it }, { "错误：${it.message}" })) } })
+                    PreferenceRow(title = "创建备份", summary = "备份数据库、配置与加密密钥包", onClick = { createBackup() })
                 }
             }
-            item { SmallTitle(text = "系统") }
+            item { SectionTitle(text = "系统") }
             item {
-                Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
-                    SwitchPreference(checked = safeEnabled, onCheckedChange = { safeEnabled = it; scope.launch { onResult(client.setSafeMode(it, bearer).fold({ value -> value }, { error -> "错误：${error.message}" })) } }, title = "Safe Mode", summary = "停止新任务并安全回收挂载")
-                    ArrowPreference(title = "Gateway 设置", summary = "Unix socket、LAN TLS、日志与迁移", onClick = { scope.launch { onResult(client.settings(bearer).fold({ it }, { "错误：${it.message}" })) } })
+                ContentCard(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                    TogglePreference(checked = safeEnabled, onCheckedChange = { safeEnabled = it; scope.launch { onResult(client.setSafeMode(it, bearer).fold({ value -> value }, { error -> "错误：${error.message}" })) } }, title = "Safe Mode", summary = "停止新任务并安全回收挂载")
+                    PreferenceRow(title = "Gateway 设置", summary = "Unix socket、LAN TLS、日志与迁移", onClick = { scope.launch { onResult(client.settings(bearer).fold({ it }, { "错误：${it.message}" })) } })
                 }
             }
             item { Text(result) }
@@ -359,9 +342,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ActionListPage(padding: PaddingValues, title: String, result: String, onResult: (String) -> Unit, actions: List<Pair<String, suspend () -> Result<String>?>>) {
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item { SmallTitle(text = title) }
+            item { SectionTitle(text = title) }
             items(actions) { (label, action) ->
-                Card(modifier = Modifier.fillMaxWidth(), onClick = {
+                ContentCard(modifier = Modifier.fillMaxWidth(), onClick = {
                     scope.launch {
                         action()?.let { resultValue ->
                             onResult(resultValue.fold({ value -> value }, { error -> "错误：${error.message}" }))
@@ -519,3 +502,4 @@ class MainActivity : ComponentActivity() {
     override fun onPause() { tokenStore.write(token.text.toString()); super.onPause() }
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
 }
+

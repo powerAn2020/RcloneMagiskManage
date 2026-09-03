@@ -1,0 +1,138 @@
+package com.android.rclone.manager
+
+import android.util.Base64
+import com.topjohnwu.superuser.Shell
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+
+/** Fixed typed bridge. No raw rclone RC, shell, or user supplied flags. */
+class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtime/gateway.sock") {
+    suspend fun health(): Result<String> = request("GET", "/api/v1/system/health")
+    suspend fun info(token: String): Result<String> = request("GET", "/api/v1/system/info", token)
+    suspend fun safeMode(token: String): Result<String> = request("GET", "/api/v1/system/safe-mode", token)
+    suspend fun setSafeMode(enabled: Boolean, token: String): Result<String> =
+        request("PUT", "/api/v1/system/safe-mode", token, JSONObject().put("enabled", enabled))
+    suspend fun remotes(token: String): Result<String> = request("GET", "/api/v1/remotes", token)
+    suspend fun jobs(token: String): Result<String> = request("GET", "/api/v1/jobs", token)
+    suspend fun mounts(token: String): Result<String> = request("GET", "/api/v1/mounts", token)
+    suspend fun auditLogs(token: String): Result<String> = request("GET", "/api/v1/logs/audit", token)
+    suspend fun backups(token: String): Result<String> = request("GET", "/api/v1/system/backups", token)
+    suspend fun createRemote(name: String, type: String, endpoint: String?, secret: JSONObject?, token: String): Result<String> =
+        request("POST", "/api/v1/remotes", token, JSONObject().put("name", name).put("type", type).apply { if (endpoint != null) put("endpoint", endpoint); if (secret != null) put("secret", secret) })
+
+    suspend fun importRemote(name: String, type: String, endpoint: String?, token: String): Result<String> =
+        request("POST", "/api/v1/remotes/import", token, JSONObject().put("name", name).put("type", type).apply { if (endpoint != null) put("endpoint", endpoint) })
+
+    suspend fun updateRemote(id: String, name: String, type: String, endpoint: String?, token: String, secret: JSONObject? = null): Result<String> =
+        request("PUT", "/api/v1/remotes/${encode(id)}", token, JSONObject().put("name", name).put("type", type).apply { if (endpoint != null) put("endpoint", endpoint); if (secret != null) put("secret", secret) })
+
+    suspend fun createJob(type: String, source: String, destination: String, token: String, schedule: String? = null, networkPolicy: String? = null, batteryPolicy: String? = null, dryRun: Boolean = false, options: JSONObject? = null): Result<String> =
+        request("POST", "/api/v1/jobs", token, JSONObject().put("type", type).put("source", source).put("destination", destination).put("dryRun", dryRun).apply { if (!schedule.isNullOrBlank()) put("schedule", schedule); if (!networkPolicy.isNullOrBlank()) put("networkPolicy", networkPolicy); if (!batteryPolicy.isNullOrBlank()) put("batteryPolicy", batteryPolicy); if (options != null) put("options", options) })
+
+    suspend fun jobRuns(id: String, token: String): Result<String> =
+        request("GET", "/api/v1/jobs/${encode(id)}/runs", token)
+
+    suspend fun jobLog(id: String, token: String): Result<String> =
+        request("GET", "/api/v1/jobs/${encode(id)}/log", token)
+
+    suspend fun createMount(name: String, remoteId: String, mountPoint: String, token: String, remotePath: String? = null, cacheDir: String? = null, readOnly: Boolean = false, cacheMode: String? = null, cacheMaxSize: String? = null, cacheMaxAge: String? = null): Result<String> =
+        request("POST", "/api/v1/mounts", token, JSONObject().put("name", name).put("remoteId", remoteId).put("mountPoint", mountPoint).put("readOnly", readOnly).apply {
+            if (!remotePath.isNullOrBlank()) put("remotePath", remotePath)
+            if (!cacheDir.isNullOrBlank()) put("cacheDir", cacheDir)
+            if (!cacheMode.isNullOrBlank()) put("cacheMode", cacheMode)
+            if (!cacheMaxSize.isNullOrBlank()) put("cacheMaxSize", cacheMaxSize)
+            if (!cacheMaxAge.isNullOrBlank()) put("cacheMaxAge", cacheMaxAge)
+        })
+
+    suspend fun listFiles(remoteId: String, path: String, token: String): Result<String> =
+        request("GET", "/api/v1/files?remoteId=${java.net.URLEncoder.encode(remoteId, "UTF-8")}&path=${java.net.URLEncoder.encode(path, "UTF-8")}", token)
+
+    suspend fun mkdir(remoteId: String, path: String, token: String): Result<String> =
+        request("POST", "/api/v1/files/mkdir", token, JSONObject().put("remoteId", remoteId).put("path", path))
+
+    suspend fun upload(localPath: String, remoteTarget: String, token: String): Result<String> =
+        request("POST", "/api/v1/files/upload", token, JSONObject().put("source", localPath).put("destination", remoteTarget))
+
+    suspend fun download(remoteTarget: String, localPath: String, token: String): Result<String> =
+        request("POST", "/api/v1/files/download", token, JSONObject().put("source", remoteTarget).put("destination", localPath))
+
+    suspend fun copy(source: String, destination: String, token: String): Result<String> =
+        request("POST", "/api/v1/files/copy", token, JSONObject().put("source", source).put("destination", destination))
+
+    suspend fun move(source: String, destination: String, token: String): Result<String> =
+        request("POST", "/api/v1/files/move", token, JSONObject().put("source", source).put("destination", destination))
+
+    suspend fun createCrypt(name: String, remoteId: String, remotePath: String?, password: String?, token: String): Result<String> =
+        request("POST", "/api/v1/crypt", token, JSONObject().put("name", name).put("remoteId", remoteId).apply { if (!remotePath.isNullOrBlank()) put("remotePath", remotePath); if (!password.isNullOrBlank()) put("password", password) })
+
+    suspend fun crypts(token: String): Result<String> = request("GET", "/api/v1/crypt", token)
+    suspend fun cryptTest(id: String, token: String): Result<String> = request("POST", "/api/v1/crypt/${encode(id)}/test", token)
+
+    suspend fun testRemote(id: String, token: String): Result<String> =
+        request("POST", "/api/v1/remotes/${java.net.URLEncoder.encode(id, "UTF-8")}/test", token)
+
+    suspend fun createBackup(token: String): Result<String> = request("POST", "/api/v1/system/backups", token)
+    suspend fun settings(token: String): Result<String> = request("GET", "/api/v1/system/settings", token)
+    suspend fun updateSettings(settings: JSONObject, token: String): Result<String> = request("PUT", "/api/v1/system/settings", token, settings)
+    suspend fun migrationStatus(token: String): Result<String> = request("GET", "/api/v1/system/migration", token)
+
+    suspend fun deletePreview(remoteId: String, path: String, token: String): Result<String> =
+        request("POST", "/api/v1/files/delete", token, JSONObject().put("remoteId", remoteId).put("path", path).put("dryRun", true))
+
+    suspend fun deleteConfirmed(remoteId: String, path: String, confirmationToken: String, token: String): Result<String> =
+        request("POST", "/api/v1/files/delete", token, JSONObject().put("remoteId", remoteId).put("path", path).put("dryRun", false).put("confirmationToken", confirmationToken))
+
+    suspend fun pairingComplete(code: String, name: String, publicKey: String): Result<String> =
+        request("POST", "/api/v1/security/pairing/complete", body = JSONObject().put("pairingCode", code).put("clientName", name).put("publicKey", publicKey))
+    suspend fun pairingStart(): Result<String> = request("POST", "/api/v1/security/pairing/start")
+
+    suspend fun jobAction(id: String, action: String, token: String): Result<String> =
+        request("POST", "/api/v1/jobs/${encode(id)}/${requireAction(action, setOf("start", "pause", "resume", "cancel", "retry"))}", token)
+
+    suspend fun mountAction(id: String, action: String, token: String): Result<String> =
+        request("POST", "/api/v1/mounts/${encode(id)}/${requireAction(action, setOf("start", "stop", "enable", "disable"))}", token)
+
+    /** First call returns a short-lived confirmation token; pass it back to commit deletion. */
+    suspend fun remoteDelete(id: String, token: String, confirmationToken: String? = null): Result<String> =
+        request("DELETE", "/api/v1/remotes/${java.net.URLEncoder.encode(id, "UTF-8")}", token,
+            confirmationToken?.let { JSONObject().put("confirmationToken", it) })
+
+    suspend fun remoteAction(id: String, action: String, token: String): Result<String> =
+        request("POST", "/api/v1/remotes/${encode(id)}/${requireAction(action, setOf("enable", "disable"))}", token)
+
+    suspend fun exportRemote(id: String, token: String): Result<String> =
+        request("GET", "/api/v1/remotes/${encode(id)}/export", token)
+
+    suspend fun clients(token: String): Result<String> = request("GET", "/api/v1/security/clients", token)
+    suspend fun grants(clientId: String, token: String): Result<String> = request("GET", "/api/v1/security/clients/${java.net.URLEncoder.encode(clientId, "UTF-8")}/grants", token)
+    suspend fun grant(clientId: String, scope: String, resource: String, token: String): Result<String> =
+        request("POST", "/api/v1/security/clients/${encode(clientId)}/grants", token, JSONObject().put("scope", scope).put("resource", resource))
+    suspend fun revokeGrant(clientId: String, grantId: Long, token: String): Result<String> =
+        request("DELETE", "/api/v1/security/clients/${encode(clientId)}/grants/$grantId", token)
+    suspend fun remoteAcl(clientId: String, remoteId: String, permissions: String, prefix: String, token: String): Result<String> =
+        request("POST", "/api/v1/security/clients/${encode(clientId)}/remote-acl", token, JSONObject().put("remoteId", remoteId).put("permissions", permissions.split(',').map { it.trim() }).put("allowedPrefix", prefix))
+    suspend fun disableClient(clientId: String, token: String): Result<String> = request("POST", "/api/v1/security/clients/${java.net.URLEncoder.encode(clientId, "UTF-8")}/disable", token)
+    suspend fun rotateToken(clientId: String, token: String): Result<String> = request("POST", "/api/v1/security/clients/${java.net.URLEncoder.encode(clientId, "UTF-8")}/rotate-token", token)
+
+    private fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
+    private suspend fun request(method: String, path: String, token: String? = null, body: JSONObject? = null): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(method in setOf("GET", "POST", "PUT", "DELETE"))
+            require(path.startsWith("/api/v1/") && !path.contains("..") && !path.any { it == '\u0000' || it == '\r' || it == '\n' })
+            require(body == null || body.toString().toByteArray().size <= 64 * 1024)
+            val args = mutableListOf("/data/adb/modules/rclone-manager/bin/rclone-gateway", "request", "--socket", socket, "--method", method, "--path", path)
+            if (token != null) { require(!token.any { it == '\u0000' || it == '\r' || it == '\n' }); args += listOf("--token", token) }
+            if (body != null) args += listOf("--body-base64", Base64.encodeToString(body.toString().toByteArray(), Base64.NO_WRAP))
+            val result = Shell.cmd(args.joinToString(" ") { quote(it) }).exec()
+            val output = result.out.joinToString("\n")
+            check(result.isSuccess) { result.err.joinToString("\n").ifBlank { output.ifBlank { "gateway request failed" } } }
+            output
+        }
+    }
+
+    private fun requireAction(action: String, allowed: Set<String>): String =
+        action.trim().also { require(it in allowed) }
+
+    private fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+}
