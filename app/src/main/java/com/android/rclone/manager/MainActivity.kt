@@ -39,7 +39,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import kotlinx.coroutines.*
 import org.json.JSONObject
-import org.json.JSONArray
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card as M3Card
@@ -272,27 +271,6 @@ class MainActivity : ComponentActivity() {
             item { Text(result) }
         }
     }
-
-    private data class RemoteSummary(val id: String, val name: String, val type: String, val endpoint: String, val enabled: Boolean)
-
-    private fun parseRemotes(raw: String): List<RemoteSummary> = runCatching {
-        val value = raw.trim()
-        val array = when {
-            value.startsWith("[") -> JSONArray(value)
-            value.startsWith("{") -> {
-                val objectValue = JSONObject(value)
-                objectValue.optJSONArray("remotes") ?: objectValue.optJSONArray("items") ?: JSONArray()
-            }
-            else -> JSONArray()
-        }
-        buildList {
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                val endpoint = item.optString("endpoint", item.optString("path", ""))
-                add(RemoteSummary(item.optString("id"), item.optString("name", "未命名"), item.optString("type", "unknown"), endpoint, item.optBoolean("enabled", true)))
-            }
-        }
-    }.getOrDefault(emptyList())
 
     private fun testRemoteWithId(id: String) = scope.launch {
         output.text = client.testRemote(id, tokenState.value).fold({ it }, { "错误：${it.message}" })
