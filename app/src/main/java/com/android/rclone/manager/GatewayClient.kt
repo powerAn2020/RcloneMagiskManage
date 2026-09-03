@@ -115,6 +115,29 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun disableClient(clientId: String, token: String): Result<String> = request("POST", "/api/v1/security/clients/${java.net.URLEncoder.encode(clientId, "UTF-8")}/disable", token)
     suspend fun rotateToken(clientId: String, token: String): Result<String> = request("POST", "/api/v1/security/clients/${java.net.URLEncoder.encode(clientId, "UTF-8")}/rotate-token", token)
 
+    suspend fun ensureServiceRunning(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val check = Shell.cmd("ps -A | grep rclone-gateway").exec()
+            if (!check.isSuccess || check.out.isEmpty()) {
+                val start = Shell.cmd("sh /data/adb/modules/rclone-manager/service.sh").exec()
+                check(start.isSuccess) { start.err.joinToString("\n").ifBlank { "启动 Gateway 服务失败" } }
+                "已成功拉起 Gateway 守护进程"
+            } else {
+                "Gateway 守护进程运行中"
+            }
+        }
+    }
+
+    suspend fun autoPair(clientName: String = "RcloneManagerApp"): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val startRes = pairingStart().getOrThrow()
+            val code = JSONObject(startRes).getString("pairingCode")
+            val completeRes = pairingComplete(code, clientName, "device").getOrThrow()
+            val token = JSONObject(completeRes).getString("token")
+            token
+        }
+    }
+
     private fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
     private suspend fun request(method: String, path: String, token: String? = null, body: JSONObject? = null): Result<String> = withContext(Dispatchers.IO) {
         runCatching {

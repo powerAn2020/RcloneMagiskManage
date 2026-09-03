@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -53,6 +54,7 @@ fun DashboardScreen(
     bearer: String,
     onNavigateTab: (Int) -> Unit,
     onEditToken: () -> Unit,
+    onTokenUpdated: (String) -> Unit = {},
     onShowMessage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -127,6 +129,27 @@ fun DashboardScreen(
                     StatusBadge(status = healthStatus)
                 }
                 Spacer(Modifier.height(4.dp))
+                if (healthStatus.contains("OFFLINE", true)) {
+                    Spacer(Modifier.height(6.dp))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isRefreshing = true
+                                client.ensureServiceRunning().fold(
+                                    onSuccess = { onShowMessage(it) },
+                                    onFailure = { onShowMessage("拉起失败: ${it.message}") }
+                                )
+                                kotlinx.coroutines.delay(1200)
+                                refreshDashboard()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("一键拉起 Gateway 守护服务")
+                    }
+                }
                 systemInfo?.let { info ->
                     InfoRow(label = "rclone 版本", value = info.rcloneVersion)
                     InfoRow(label = "Gateway 版本", value = info.gatewayVersion)
@@ -195,8 +218,34 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Button(onClick = onEditToken) {
-                        Text(if (bearer.isBlank()) "设置" else "更换")
+                    Spacer(Modifier.width(8.dp))
+                    if (bearer.isBlank()) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isRefreshing = true
+                                        client.autoPair().fold(
+                                            onSuccess = {
+                                                onTokenUpdated(it)
+                                                onShowMessage("配对成功！已获取并在 Keystore 保存凭据")
+                                            },
+                                            onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                                        )
+                                        refreshDashboard()
+                                    }
+                                }
+                            ) {
+                                Text("一键配对")
+                            }
+                            OutlinedButton(onClick = onEditToken) {
+                                Text("设置")
+                            }
+                        }
+                    } else {
+                        Button(onClick = onEditToken) {
+                            Text("更换")
+                        }
                     }
                 }
             }

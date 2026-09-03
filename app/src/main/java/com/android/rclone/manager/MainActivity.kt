@@ -166,6 +166,7 @@ private fun RcloneApp(
                     selectedTab = target
                 },
                 onEditToken = { showTokenEditor = true },
+                onTokenUpdated = onTokenChanged,
                 onShowMessage = showMessage
             )
             1 -> RemotesScreen(
