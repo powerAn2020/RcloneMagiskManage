@@ -13,8 +13,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
+import androidx.compose.material3.TextButton as M3TextButton
+import androidx.compose.material3.TextField as M3TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.TextFieldValue
@@ -33,17 +33,27 @@ fun ContentCard(modifier: Modifier = Modifier, insideMargin: PaddingValues = Pad
 @Composable
 fun PreferenceRow(title: String, summary: String, onClick: () -> Unit) {
     ListItem(headlineContent = { Text(title) }, supportingContent = { Text(summary) }, modifier = Modifier.fillMaxWidth(), trailingContent = { Text("›") })
-    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("打开") }
+    M3TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("打开") }
 }
 
 @Composable
 fun TogglePreference(checked: Boolean, onCheckedChange: (Boolean) -> Unit, title: String, summary: String) {
-    ListItem(headlineContent = { Text(title) }, supportingContent = { Text(summary) }, trailingContent = { Switch(checked, onCheckedChange) })
+    ListItem(headlineContent = { Text(title) }, supportingContent = { Text(summary) }, trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange) })
 }
 
 @Composable
-fun MaterialTextField(value: TextFieldValue, onValueChange: (TextFieldValue) -> Unit, label: String, visualTransformation: VisualTransformation) {
-    TextField(value = value, onValueChange = onValueChange, label = { Text(label) }, singleLine = true, visualTransformation = visualTransformation)
+fun MaterialTextField(value: TextFieldValue, onValueChange: (TextFieldValue) -> Unit, label: String, singleLine: Boolean = true, visualTransformation: VisualTransformation = VisualTransformation.None) {
+    M3TextField(value = value, onValueChange = onValueChange, label = { Text(label) }, singleLine = singleLine, visualTransformation = visualTransformation)
+}
+
+@Composable
+fun TextButton(text: String, onClick: () -> Unit) {
+    M3TextButton(onClick = onClick) { Text(text) }
+}
+
+@Composable
+fun TextField(value: TextFieldValue, onValueChange: (TextFieldValue) -> Unit, label: String, singleLine: Boolean = true, visualTransformation: VisualTransformation = VisualTransformation.None) {
+    M3TextField(value = value, onValueChange = onValueChange, label = { Text(label) }, singleLine = singleLine, visualTransformation = visualTransformation)
 }
 
 @Composable

@@ -50,8 +50,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton as M3TextButton
-import androidx.compose.material3.TextField as M3TextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.android.rclone.manager.data.model.RemoteSummary
@@ -62,6 +60,8 @@ import com.android.rclone.manager.ui.component.MaterialTextField
 import com.android.rclone.manager.ui.component.PreferenceRow
 import com.android.rclone.manager.ui.component.SectionTitle
 import com.android.rclone.manager.ui.component.TogglePreference
+import com.android.rclone.manager.ui.component.TextButton
+import com.android.rclone.manager.ui.component.TextField
 
 class MainActivity : ComponentActivity() {
     private val client = GatewayClient()
@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
         val onConfirm: () -> Unit,
     )
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable private fun AppTopBar(title: String, subtitle: String) {
         androidx.compose.material3.TopAppBar(title = { Column { Text(title); Text(subtitle, style = MaterialTheme.typography.labelSmall) } })
     }
@@ -186,7 +187,7 @@ class MainActivity : ComponentActivity() {
         var value by remember(show, initialValue) { mutableStateOf(TextFieldValue(initialValue)) }
         MaterialDialog(show = show, title = "Gateway Token", summary = "使用 Android Keystore 加密保存，不会显示在日志中。", onDismissRequest = onDismiss) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                MaterialTextField(value = value, onValueChange = { value = it }, label = "Token", singleLine = true, visualTransformation = PasswordVisualTransformation())
+                MaterialTextField(value = value, onValueChange = { value = it }, label = "Token", visualTransformation = PasswordVisualTransformation())
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(text = "取消", onClick = onDismiss)
                     TextButton(text = "保存", onClick = {
@@ -207,7 +208,7 @@ class MainActivity : ComponentActivity() {
         MaterialDialog(show = true, title = request.title, onDismissRequest = onDismiss) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 values.forEachIndexed { index, current ->
-                    TextField(
+                    com.android.rclone.manager.ui.component.TextField(
                         value = current,
                         onValueChange = { updated -> values = values.toMutableList().also { it[index] = updated } },
                         label = request.hints[index],
