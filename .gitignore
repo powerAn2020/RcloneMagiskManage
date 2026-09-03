@@ -1,0 +1,14 @@
+/target/
+/.idea/
+*.apk
+*.zip
+*.hprof
+
+# Gradle & Android build files
+.gradle/
+build/
+app/build/
+app/.gradle/
+app/.idea/
+local.properties
+app/local.properties

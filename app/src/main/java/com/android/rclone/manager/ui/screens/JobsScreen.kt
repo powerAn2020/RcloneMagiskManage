@@ -1,0 +1,648 @@
+package com.android.rclone.manager.ui.screens
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.dp
+import com.android.rclone.manager.GatewayClient
+import com.android.rclone.manager.data.model.JobItem
+import com.android.rclone.manager.data.model.JobRunItem
+import com.android.rclone.manager.data.model.formatBytes
+import com.android.rclone.manager.data.model.formatEpochTime
+import com.android.rclone.manager.data.model.parseJobRuns
+import com.android.rclone.manager.data.model.parseJobs
+import com.android.rclone.manager.ui.component.ContentCard
+import com.android.rclone.manager.ui.component.EmptyView
+import com.android.rclone.manager.ui.component.InfoRow
+import com.android.rclone.manager.ui.component.LoadingView
+import com.android.rclone.manager.ui.component.MaterialTextField
+import com.android.rclone.manager.ui.component.SectionTitle
+import com.android.rclone.manager.ui.component.StatusBadge
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun JobsScreen(
+    padding: PaddingValues,
+    client: GatewayClient,
+    bearer: String,
+    onShowMessage: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isLoading by remember { mutableStateOf(true) }
+    var jobs by remember { mutableStateOf<List<JobItem>>(emptyList()) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var selectedRunsJob by remember { mutableStateOf<JobItem?>(null) }
+    var jobRunsList by remember { mutableStateOf<List<JobRunItem>>(emptyList()) }
+    var viewingLogJob by remember { mutableStateOf<Pair<JobItem, String>?>(null) } // JobItem to logText
+
+    val loadJobs = {
+        scope.launch {
+            isLoading = true
+            client.jobs(bearer).fold(
+                onSuccess = { jobs = parseJobs(it) },
+                onFailure = { onShowMessage("获取任务列表失败: ${it.message}") }
+            )
+            isLoading = false
+        }
+    }
+
+    LaunchedEffect(bearer) {
+        loadJobs()
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding),
+        contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionTitle(text = "任务调度中心 (${jobs.size})")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { loadJobs() },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("刷新")
+                    }
+                    Button(
+                        onClick = { showCreateDialog = true },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("创建任务")
+                    }
+                }
+            }
+        }
+
+        if (isLoading) {
+            item { LoadingView(message = "正在获取任务列表…") }
+        } else if (jobs.isEmpty()) {
+            item {
+                EmptyView(
+                    icon = Icons.Default.PlayArrow,
+                    title = "暂无任务",
+                    message = "点击右上角“创建任务”以添加同步、备份或复制任务。"
+                )
+            }
+        } else {
+            items(jobs, key = { it.id }) { job ->
+                ContentCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            StatusBadge(status = job.type.uppercase())
+                            if (job.dryRun) {
+                                StatusBadge(status = "DRY-RUN")
+                            }
+                        }
+                        StatusBadge(status = job.status)
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "源: ${job.source}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (job.destination.isNotBlank()) {
+                        Text(
+                            text = "目标: ${job.destination}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    job.schedule?.let {
+                        Text(
+                            text = "计划调度: $it" + (job.nextRunAt?.let { t -> " · 下次执行: ${formatEpochTime(t)}" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        when (job.status.uppercase()) {
+                            "QUEUED", "STOPPED", "SUCCESS", "FAILED", "CANCELLED" -> {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            client.jobAction(job.id, "start", bearer).fold(
+                                                onSuccess = { onShowMessage("任务已启动"); loadJobs() },
+                                                onFailure = { onShowMessage("启动失败: ${it.message}") }
+                                            )
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(2.dp))
+                                    Text("启动")
+                                }
+                            }
+                            "RUNNING" -> {
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            client.jobAction(job.id, "pause", bearer).fold(
+                                                onSuccess = { onShowMessage("已请求暂停"); loadJobs() },
+                                                onFailure = { onShowMessage("暂停失败: ${it.message}") }
+                                            )
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Pause, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(2.dp))
+                                    Text("暂停")
+                                }
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            client.jobAction(job.id, "cancel", bearer).fold(
+                                                onSuccess = { onShowMessage("已请求取消"); loadJobs() },
+                                                onFailure = { onShowMessage("取消失败: ${it.message}") }
+                                            )
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(2.dp))
+                                    Text("取消")
+                                }
+                            }
+                            "PAUSED" -> {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            client.jobAction(job.id, "resume", bearer).fold(
+                                                onSuccess = { onShowMessage("已恢复执行"); loadJobs() },
+                                                onFailure = { onShowMessage("恢复失败: ${it.message}") }
+                                            )
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(2.dp))
+                                    Text("恢复")
+                                }
+                            }
+                        }
+
+                        if (job.status.uppercase() in setOf("FAILED", "CANCELLED")) {
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        client.jobAction(job.id, "retry", bearer).fold(
+                                            onSuccess = { onShowMessage("已提交重试"); loadJobs() },
+                                            onFailure = { onShowMessage("重试失败: ${it.message}") }
+                                        )
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(2.dp))
+                                Text("重试")
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    client.jobRuns(job.id, bearer).fold(
+                                        onSuccess = {
+                                            jobRunsList = parseJobRuns(it)
+                                            selectedRunsJob = job
+                                        },
+                                        onFailure = { onShowMessage("获取运行记录失败: ${it.message}") }
+                                    )
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("历史")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    client.jobLog(job.id, bearer).fold(
+                                        onSuccess = { logText ->
+                                            viewingLogJob = job to logText
+                                        },
+                                        onFailure = { onShowMessage("获取日志失败: ${it.message}") }
+                                    )
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("日志")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Dialog: Create Job
+    if (showCreateDialog) {
+        CreateJobDialog(
+            onDismiss = { showCreateDialog = false },
+            onSubmit = { type, src, dest, schedule, netPolicy, batPolicy, dryRun, options ->
+                scope.launch {
+                    client.createJob(type, src, dest, bearer, schedule, netPolicy, batPolicy, dryRun, options).fold(
+                        onSuccess = {
+                            onShowMessage("任务创建成功")
+                            showCreateDialog = false
+                            loadJobs()
+                        },
+                        onFailure = { onShowMessage("创建任务失败: ${it.message}") }
+                    )
+                }
+            }
+        )
+    }
+
+    // Dialog: Runs History
+    selectedRunsJob?.let { job ->
+        AlertDialog(
+            onDismissRequest = { selectedRunsJob = null },
+            title = { Text("执行历史: ${job.type} (${job.id.take(8)})", fontWeight = FontWeight.Bold) },
+            text = {
+                if (jobRunsList.isEmpty()) {
+                    Text("暂无执行记录。")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.height(300.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(jobRunsList) { run ->
+                            ContentCard(insideMargin = PaddingValues(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("状态", style = MaterialTheme.typography.labelSmall)
+                                    StatusBadge(status = run.state)
+                                }
+                                run.startedAt?.let { InfoRow(label = "开始时间", value = formatEpochTime(it)) }
+                                run.finishedAt?.let { InfoRow(label = "结束时间", value = formatEpochTime(it)) }
+                                run.transferredBytes?.let { InfoRow(label = "已传输体积", value = formatBytes(it)) }
+                                run.transferredFiles?.let { InfoRow(label = "已传输文件", value = "$it 个") }
+                                run.errorMessage?.let {
+                                    Text(
+                                        text = "错误: $it",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedRunsJob = null }) { Text("关闭") }
+            }
+        )
+    }
+
+    // Dialog: View Job Log
+    viewingLogJob?.let { (job, logContent) ->
+        AlertDialog(
+            onDismissRequest = { viewingLogJob = null },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("任务日志", fontWeight = FontWeight.Bold)
+                    IconButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("job-log", logContent))
+                        onShowMessage("日志已复制到剪贴板")
+                    }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "复制日志")
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .height(360.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = logContent.ifBlank { "(日志为空或尚无输出)" },
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewingLogJob = null }) { Text("关闭") }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CreateJobDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (type: String, src: String, dest: String, schedule: String?, net: String?, bat: String?, dryRun: Boolean, options: JSONObject?) -> Unit
+) {
+    var type by remember { mutableStateOf("copy") }
+    var source by remember { mutableStateOf(TextFieldValue("")) }
+    var destination by remember { mutableStateOf(TextFieldValue("")) }
+    var schedule by remember { mutableStateOf(TextFieldValue("")) }
+    var networkPolicy by remember { mutableStateOf("ANY") }
+    var batteryPolicy by remember { mutableStateOf("ANY") }
+    var dryRun by remember { mutableStateOf(false) }
+
+    // Advanced options
+    var transfers by remember { mutableStateOf(TextFieldValue("4")) }
+    var checkers by remember { mutableStateOf(TextFieldValue("8")) }
+    var bwLimit by remember { mutableStateOf(TextFieldValue("")) }
+    var overwrite by remember { mutableStateOf(false) }
+    var deleteExcluded by remember { mutableStateOf(false) }
+
+    val jobTypes = listOf("copy", "sync", "move", "bisync", "delete")
+    val netPolicies = listOf("ANY", "WIFI", "UNMETERED", "VPN")
+    val batPolicies = listOf("ANY", "CHARGING", "BATTERY_30")
+
+    var typeDropdownExpanded by remember { mutableStateOf(false) }
+    var netDropdownExpanded by remember { mutableStateOf(false) }
+    var batDropdownExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("创建任务", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Type Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = typeDropdownExpanded,
+                    onExpandedChange = { typeDropdownExpanded = !typeDropdownExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = type,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("任务类型") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeDropdownExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = typeDropdownExpanded,
+                        onDismissRequest = { typeDropdownExpanded = false }
+                    ) {
+                        jobTypes.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item) },
+                                onClick = {
+                                    type = item
+                                    typeDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                MaterialTextField(value = source, onValueChange = { source = it }, label = "源路径 (例如: remote:path 或 /sdcard/...)")
+
+                if (type != "delete") {
+                    MaterialTextField(value = destination, onValueChange = { destination = it }, label = "目标路径 (例如: remote:path 或 /sdcard/...)")
+                }
+
+                MaterialTextField(value = schedule, onValueChange = { schedule = it }, label = "计划调度 (@hourly/@daily/@reboot, 可选)")
+
+                // Network policy
+                ExposedDropdownMenuBox(
+                    expanded = netDropdownExpanded,
+                    onExpandedChange = { netDropdownExpanded = !netDropdownExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = networkPolicy,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("网络策略限制") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = netDropdownExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = netDropdownExpanded,
+                        onDismissRequest = { netDropdownExpanded = false }
+                    ) {
+                        netPolicies.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item) },
+                                onClick = {
+                                    networkPolicy = item
+                                    netDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Battery policy
+                ExposedDropdownMenuBox(
+                    expanded = batDropdownExpanded,
+                    onExpandedChange = { batDropdownExpanded = !batDropdownExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = batteryPolicy,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("电量策略限制") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = batDropdownExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = batDropdownExpanded,
+                        onDismissRequest = { batDropdownExpanded = false }
+                    ) {
+                        batPolicies.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item) },
+                                onClick = {
+                                    batteryPolicy = item
+                                    batDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Dry-Run (演练模拟，不改动数据)")
+                    Switch(checked = dryRun, onCheckedChange = { dryRun = it })
+                }
+
+                // Options
+                Text("高级并发与限速选项", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MaterialTextField(value = transfers, onValueChange = { transfers = it }, label = "Transfers (1..32)", modifier = Modifier.weight(1f))
+                    MaterialTextField(value = checkers, onValueChange = { checkers = it }, label = "Checkers (1..64)", modifier = Modifier.weight(1f))
+                }
+                MaterialTextField(value = bwLimit, onValueChange = { bwLimit = it }, label = "带宽限速 (如 10M, 可选)")
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("覆盖同名文件 (Overwrite)")
+                    Switch(checked = overwrite, onCheckedChange = { overwrite = it })
+                }
+
+                if (type == "sync") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("删除排除的文件 (deleteExcluded)")
+                        Switch(checked = deleteExcluded, onCheckedChange = { deleteExcluded = it })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val src = source.text.trim()
+                    val dest = destination.text.trim()
+                    if (src.isBlank()) return@Button
+                    val optionsObj = JSONObject().apply {
+                        transfers.text.toIntOrNull()?.let { put("transfers", it) }
+                        checkers.text.toIntOrNull()?.let { put("checkers", it) }
+                        if (bwLimit.text.isNotBlank()) put("bwLimit", bwLimit.text.trim())
+                        if (overwrite) put("overwrite", true)
+                        if (type == "sync" && deleteExcluded) put("deleteExcluded", true)
+                    }.takeIf { it.length() > 0 }
+
+                    onSubmit(
+                        type,
+                        src,
+                        dest,
+                        schedule.text.trim().ifBlank { null },
+                        networkPolicy,
+                        batteryPolicy,
+                        dryRun,
+                        optionsObj
+                    )
+                }
+            ) {
+                Text("创建")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}

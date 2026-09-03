@@ -1,0 +1,489 @@
+openapi: 3.0.3
+info:
+  title: Android Rclone Root Manager Gateway API
+  version: 1.1.0
+  description: |
+    Controlled API exposed by the Root Gateway. Raw rclone RC is never exposed to Android clients.
+servers:
+  - url: http://unix-socket
+    description: Local Unix-domain socket (development proxy URL)
+  - url: https://127.0.0.1:8443
+    description: Optional LAN endpoint; TLS is mandatory and the address/port are configurable
+security:
+  - bearerAuth: []
+tags:
+  - name: system
+  - name: remotes
+  - name: files
+  - name: jobs
+  - name: mounts
+  - name: security
+  - name: logs
+paths:
+  /api/v1/system/info:
+    get:
+      tags: [system]
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: System information
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SystemInfo'}
+  /api/v1/system/health:
+    get:
+      tags: [system]
+      responses:
+        '200': {description: Health state}
+  /api/v1/system/safe-mode:
+    get:
+      tags: [system]
+      responses: {'200': {description: Safe mode state}}
+    put:
+      tags: [system]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [enabled], properties: {enabled: {type: boolean}}}}}
+      responses: {'200': {description: Safe mode updated}}
+  /api/v1/system/settings:
+    get:
+      tags: [system]
+      responses: {'200': {description: Typed runtime settings}}
+    put:
+      tags: [system]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SystemSettings'}}}
+      responses: {'200': {description: Settings updated}}
+  /api/v1/system/migration:
+    get:
+      tags: [system]
+      responses: {'200': {description: Migration history and error count}}
+  /api/v1/system/backups:
+    get:
+      tags: [system]
+      responses: {'200': {description: Database backup list}}
+    post:
+      tags: [system]
+      responses: {'201': {description: Database backup created}}
+  /api/v1/remotes:
+    get:
+      tags: [remotes]
+      responses:
+        '200':
+          description: Remote list
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Remote'}}
+    post:
+      tags: [remotes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteCreate'}
+      responses: {'201': {description: Created}}
+  /api/v1/remotes/import:
+    post:
+      tags: [remotes]
+      description: Import a credential-free export; credentials may be supplied through the write-only secret field.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RemoteCreate'}}}
+      responses: {'201': {description: Imported}}
+  /api/v1/remotes/{remoteId}:
+    get:
+      tags: [remotes]
+      parameters: [{name: remoteId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Remote}}
+    put:
+      tags: [remotes]
+      parameters: [{name: remoteId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteUpdate'}
+      responses: {'200': {description: Updated}}
+    delete:
+      tags: [remotes]
+      parameters: [{name: remoteId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {$ref: '#/components/schemas/Confirmation'}}}
+      responses:
+        '202': {description: Confirmation token issued}
+        '204': {description: Deleted}
+  /api/v1/remotes/{remoteId}/test:
+    post:
+      tags: [remotes]
+      parameters: [{name: remoteId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Connection test result}}
+  /api/v1/remotes/{remoteId}/enable:
+    post:
+      tags: [remotes]
+      parameters: [{name: remoteId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Remote enabled}}
+  /api/v1/remotes/{remoteId}/disable:
+    post:
+      tags: [remotes]
+      parameters: [{name: remoteId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Remote disabled}}
+  /api/v1/remotes/{remoteId}/export:
+    get:
+      tags: [remotes]
+      parameters: [{name: remoteId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Credential-free remote export}}
+  /api/v1/files:
+    get:
+      tags: [files]
+      parameters:
+        - {name: remoteId, in: query, required: true, schema: {type: string}}
+        - {name: path, in: query, required: false, schema: {type: string, default: /}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 200}}
+      responses: {'200': {description: Object listing}}
+  /api/v1/files/mkdir:
+    post:
+      tags: [files]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PathOperation'}}}
+      responses: {'200': {description: Success}}
+  /api/v1/files/delete:
+    post:
+      tags: [files]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/DeleteRequest'}}}
+      responses: {'202': {description: Delete job created}}
+  /api/v1/files/copy:
+    post:
+      tags: [files]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FileTransferRequest'}}}
+      responses: {'202': {description: Transfer job created}}
+  /api/v1/files/move:
+    post:
+      tags: [files]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FileTransferRequest'}}}
+      responses: {'202': {description: Transfer job created}}
+  /api/v1/files/upload:
+    post:
+      tags: [files]
+      description: Copy a local Android path to a remote.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FileTransferRequest'}}}
+      responses: {'202': {description: Upload job created}}
+  /api/v1/files/download:
+    post:
+      tags: [files]
+      description: Copy a remote path to a local Android path.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FileTransferRequest'}}}
+      responses: {'202': {description: Download job created}}
+  /api/v1/jobs:
+    get:
+      tags: [jobs]
+      parameters:
+        - {name: status, in: query, schema: {type: string}}
+        - {name: type, in: query, schema: {type: string}}
+      responses: {'200': {description: Job list}}
+    post:
+      tags: [jobs]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/JobCreate'}}}
+      responses: {'202': {description: Job accepted}}
+  /api/v1/jobs/{jobId}:
+    get:
+      tags: [jobs]
+      parameters: [{name: jobId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Job}}
+    delete:
+      tags: [jobs]
+      parameters: [{name: jobId, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Deleted}}
+  /api/v1/jobs/{jobId}/runs:
+    get:
+      tags: [jobs]
+      parameters: [{name: jobId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Job execution runs}}
+  /api/v1/jobs/{jobId}/log:
+    get:
+      tags: [jobs]
+      parameters: [{name: jobId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Bounded job log}}
+  /api/v1/jobs/{jobId}/start:
+    post: {tags: [jobs], parameters: [{name: jobId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Started}}}
+  /api/v1/jobs/{jobId}/pause:
+    post: {tags: [jobs], parameters: [{name: jobId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Pause requested}}}
+  /api/v1/jobs/{jobId}/resume:
+    post: {tags: [jobs], parameters: [{name: jobId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Resume requested}}}
+  /api/v1/jobs/{jobId}/cancel:
+    post: {tags: [jobs], parameters: [{name: jobId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Cancel requested}}}
+  /api/v1/jobs/{jobId}/retry:
+    post: {tags: [jobs], parameters: [{name: jobId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Retry requested}}}
+  /api/v1/mounts:
+    get: {tags: [mounts], responses: {'200': {description: Mount list}}}
+    post:
+      tags: [mounts]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MountCreate'}}}
+      responses: {'201': {description: Mount profile created}}
+  /api/v1/mounts/{mountId}/start:
+    post: {tags: [mounts], parameters: [{name: mountId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Start requested}}}
+  /api/v1/mounts/{mountId}/stop:
+    post: {tags: [mounts], parameters: [{name: mountId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Stop requested}}}
+  /api/v1/mounts/{mountId}/enable:
+    post: {tags: [mounts], parameters: [{name: mountId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Mount enabled for boot recovery}}}
+  /api/v1/mounts/{mountId}/disable:
+    post: {tags: [mounts], parameters: [{name: mountId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Mount disabled}}}
+  /api/v1/crypt:
+    get:
+      tags: [remotes]
+      responses: {'200': {description: Crypt profiles}}
+    post:
+      tags: [remotes]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CryptCreate'}}}
+      responses: {'201': {description: Crypt profile created}}
+  /api/v1/crypt/{cryptId}/test:
+    post:
+      tags: [remotes]
+      parameters: [{name: cryptId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Crypt password/encryption status}}
+  /api/v1/security/clients:
+    get: {tags: [security], responses: {'200': {description: Client list}}}
+  /api/v1/security/clients/{clientId}/grants:
+    get:
+      tags: [security]
+      parameters: [{name: clientId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Client grants}}
+    post:
+      tags: [security]
+      parameters: [{name: clientId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/GrantCreate'}}}
+      responses: {'204': {description: Grant created}}
+  /api/v1/security/clients/{clientId}/grants/{grantId}:
+    delete:
+      tags: [security]
+      parameters:
+        - {name: clientId, in: path, required: true, schema: {type: string}}
+        - {name: grantId, in: path, required: true, schema: {type: integer}}
+      responses: {'204': {description: Grant revoked}}
+  /api/v1/security/clients/{clientId}/remote-acl:
+    post:
+      tags: [security]
+      parameters: [{name: clientId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RemoteAclCreate'}}}
+      responses: {'204': {description: Remote ACL granted}}
+  /api/v1/security/clients/{clientId}/disable:
+    post:
+      tags: [security]
+      parameters: [{name: clientId, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Client disabled}}
+  /api/v1/security/clients/{clientId}/rotate-token:
+    post:
+      tags: [security]
+      parameters: [{name: clientId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: New token returned once}}
+  /api/v1/security/pairing/start:
+    post: {tags: [security], responses: {'201': {description: Pairing session created}}}
+  /api/v1/security/pairing/complete:
+    post:
+      tags: [security]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PairingComplete'}}}
+      responses: {'201': {description: Client registered}}
+  /api/v1/logs/audit:
+    get:
+      tags: [logs]
+      responses:
+        '200':
+          description: Audit events. Resource/path material is represented by a SHA-256 pathHash.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: integer}
+                    timestamp: {type: integer}
+                    clientId: {type: string, nullable: true}
+                    uid: {type: integer, nullable: true}
+                    operation: {type: string}
+                    resource: {type: string, nullable: true}
+                    remoteId: {type: string, nullable: true}
+                    pathHash: {type: string, nullable: true}
+                    result: {type: string}
+                    errorCode: {type: string, nullable: true}
+                    latencyMs: {type: integer, nullable: true}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-token
+      description: Required on all authenticated routes. LAN requests also require the HMAC headers below.
+    clientId:
+      type: apiKey
+      in: header
+      name: X-Client-Id
+    timestamp:
+      type: apiKey
+      in: header
+      name: X-Timestamp
+    nonce:
+      type: apiKey
+      in: header
+      name: X-Nonce
+    signature:
+      type: apiKey
+      in: header
+      name: X-Signature
+  schemas:
+    Remote:
+      type: object
+      required: [id, name, type, enabled]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        type: {type: string}
+        endpoint: {type: string}
+        enabled: {type: boolean}
+        secretRef: {type: string, readOnly: true}
+    RemoteCreate:
+      allOf:
+        - $ref: '#/components/schemas/Remote'
+      description: Credentials are passed via a secure secretRef flow and never returned in read APIs.
+      properties:
+        secret:
+          type: object
+          writeOnly: true
+          additionalProperties: {type: string}
+    RemoteUpdate: {$ref: '#/components/schemas/RemoteCreate'}
+    PathOperation:
+      type: object
+      required: [remoteId, path]
+      properties:
+        remoteId: {type: string}
+        path: {type: string}
+    DeleteRequest:
+      allOf:
+        - $ref: '#/components/schemas/PathOperation'
+      properties:
+        dryRun: {type: boolean, default: true}
+        confirmationToken: {type: string}
+    FileTransferRequest:
+      type: object
+      required: [source, destination]
+      properties:
+        source: {type: string}
+        destination: {type: string}
+        overwrite: {type: boolean, default: false}
+    JobCreate:
+      type: object
+      required: [type, source, destination]
+      properties:
+        type: {type: string, enum: [copy, sync, move, bisync, delete]}
+        source: {type: string}
+        destination: {type: string}
+        schedule: {type: string, nullable: true}
+        networkPolicy: {type: string, enum: [ANY, WIFI, UNMETERED, VPN], default: ANY}
+        batteryPolicy: {type: string, enum: [ANY, CHARGING, BATTERY_30], default: ANY}
+        dryRun: {type: boolean, default: false}
+        options:
+          type: object
+          additionalProperties: false
+          properties:
+            transfers: {type: integer, minimum: 1, maximum: 32}
+            checkers: {type: integer, minimum: 1, maximum: 64}
+            bwLimit: {type: string}
+    Job:
+      type: object
+      properties:
+        id: {type: string}
+        type: {type: string}
+        status: {type: string}
+        source: {type: string}
+        destination: {type: string}
+        dryRun: {type: boolean}
+        schedule: {type: string, nullable: true}
+        nextRunAt: {type: integer, format: int64, nullable: true}
+    MountCreate:
+      type: object
+      required: [remoteId, remotePath, mountPoint]
+      properties:
+        remoteId: {type: string}
+        remotePath: {type: string}
+        mountPoint: {type: string, description: FUSE mount path; /mnt/rclone-<name> also gets a derived /data/media/0/<name> bind target}
+        cacheDir: {type: string, description: Must remain under the manager cache directory}
+        readOnly: {type: boolean, default: false}
+        cacheMode: {type: string, enum: [off, minimal, writes, full], default: full}
+        cacheMaxSize: {type: string, default: 32G}
+        cacheMaxAge: {type: string, default: 36h}
+    CryptCreate:
+      type: object
+      required: [name, remoteId]
+      properties:
+        name: {type: string}
+        remoteId: {type: string}
+        remotePath: {type: string, default: /}
+        password: {type: string, writeOnly: true}
+    Confirmation:
+      type: object
+      required: [confirmationToken]
+      properties:
+        confirmationToken: {type: string}
+    SystemSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        logRetentionDays: {type: integer, minimum: 1, maximum: 365}
+        logMaxBytes: {type: integer, minimum: 1048576, maximum: 1073741824}
+        cacheMaxBytes: {type: integer, minimum: 67108864, maximum: 1099511627776}
+        maxConcurrentJobs: {type: integer, minimum: 1, maximum: 4}
+    PairingComplete:
+      type: object
+      required: [pairingCode, clientName, publicKey]
+      properties:
+        pairingCode: {type: string}
+        clientName: {type: string}
+        publicKey: {type: string}
+    GrantCreate:
+      type: object
+      required: [scope]
+      properties:
+        scope: {type: string}
+        resource: {type: string, default: '*'}
+        expiresAt: {type: integer, format: int64, nullable: true}
+    RemoteAclCreate:
+      type: object
+      required: [remoteId, permissions]
+      properties:
+        remoteId: {type: string}
+        permissions: {type: array, items: {type: string, enum: [file.read, file.write, file.delete, '*']}}
+        allowedPrefix: {type: string, default: /}
+    SystemInfo:
+      type: object
+      properties:
+        service: {type: string}
+        rcloneVersion: {type: string}
+        gatewayVersion: {type: string}
+        apiVersion: {type: string}
+        root: {type: boolean}
+        lanEnabled: {type: boolean, description: Whether an explicitly configured TLS LAN listener is enabled}
+        mtlsRequired: {type: boolean, description: Whether the LAN listener requires a client certificate}
