@@ -66,10 +66,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import io.github.poweran2020.rclone.manager.GatewayClient
+import io.github.poweran2020.rclone.manager.data.model.MountProfileItem
 import io.github.poweran2020.rclone.manager.data.model.RemoteExportData
 import io.github.poweran2020.rclone.manager.data.model.RemoteItem
+import io.github.poweran2020.rclone.manager.data.model.parseMounts
 import io.github.poweran2020.rclone.manager.data.model.parseRemoteExport
 import io.github.poweran2020.rclone.manager.data.model.parseRemotes
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Surface
 import io.github.poweran2020.rclone.manager.ui.component.ContentCard
 import io.github.poweran2020.rclone.manager.ui.component.DangerousConfirmDialog
 import io.github.poweran2020.rclone.manager.ui.component.EmptyView
@@ -120,6 +125,7 @@ fun RemotesScreen(
     var editingRemote by remember { mutableStateOf<RemoteItem?>(null) }
     var exportData by remember { mutableStateOf<RemoteExportData?>(null) }
     var deleteCandidate by remember { mutableStateOf<Pair<RemoteItem, String>?>(null) } // RemoteItem to confirmationToken
+    var mountConflictWarning by remember { mutableStateOf<Pair<RemoteItem, List<MountProfileItem>>?>(null) }
     var isDeletingRemote by remember { mutableStateOf(false) }
 
     val loadRemotes = {
@@ -286,6 +292,17 @@ fun RemotesScreen(
                         IconButton(
                             onClick = {
                                 scope.launch {
+                                    // 前置检查：是否存在关联的挂载配置
+                                    val mountsRes = client.mounts(bearer)
+                                    val referencedMounts = mountsRes.getOrNull()?.let { parseMounts(it) }?.filter {
+                                        it.remoteId == remote.id || it.remoteName == remote.name
+                                    } ?: emptyList()
+
+                                    if (referencedMounts.isNotEmpty()) {
+                                        mountConflictWarning = remote to referencedMounts
+                                        return@launch
+                                    }
+
                                     client.remoteDelete(remote.id, bearer).fold(
                                         onSuccess = { preview ->
                                             val token = JSONObject(preview).optString("confirmationToken")
@@ -417,6 +434,59 @@ fun RemotesScreen(
             data = data,
             onDismiss = { exportData = null },
             onShowMessage = onShowMessage
+        )
+    }
+
+    mountConflictWarning?.let { (remote, referencedMounts) ->
+        AlertDialog(
+            onDismissRequest = { mountConflictWarning = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = {
+                Text("无法删除远端: ${remote.name}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "检测到该远端当前被以下挂载配置引用。为保证系统文件访问稳定，禁止删除该远端：",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    referencedMounts.forEach { m ->
+                        val isRunning = m.status == "RUNNING" || m.status == "STARTING"
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("挂载名称: ${m.name}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                Text("本地挂载点: ${m.mountPoint}", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "运行状态: ${if (isRunning) "⚠️ 挂载运行中" else "已停止"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (isRunning) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        "提示：请先前往【更多 -> 挂载管理】停止并删除相关挂载配置，然后再尝试删除此远端。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { mountConflictWarning = null }) {
+                    Text("我知道了")
+                }
+            }
         )
     }
 }

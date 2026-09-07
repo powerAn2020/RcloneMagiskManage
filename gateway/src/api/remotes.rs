@@ -253,6 +253,31 @@ pub async fn remote_delete(
 ) -> Result<Response> {
     let c = scope(&h, &s, "remote.delete")?;
     acl(&s, &c, &id, "*", "/")?;
+
+    let remote_name: Option<String> = db(&s)?
+        .query_row("SELECT name FROM remote WHERE id=?", params![id], |r| r.get(0))
+        .optional()?;
+    let r_name = remote_name.as_deref().unwrap_or(&id);
+
+    let (mount_count, crypt_count): (i64, i64) = db(&s)?.query_row(
+        "SELECT 
+            (SELECT COUNT(*) FROM mount_profile WHERE remote_id=? OR remote_id=?),
+            (SELECT COUNT(*) FROM crypt_profile WHERE remote_id=? OR remote_id=?)",
+        params![id, r_name, id, r_name],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+
+    if mount_count > 0 {
+        return Err(GatewayError::Message(
+            "无法删除：该远端存在关联的挂载配置，请先停止并删除相关挂载配置后再试".into(),
+        ));
+    }
+    if crypt_count > 0 {
+        return Err(GatewayError::Message(
+            "无法删除：该远端存在关联的加密档案，请先删除相关加密档案后再试".into(),
+        ));
+    }
+
     let token = if body.is_empty() {
         None
     } else {
@@ -290,16 +315,6 @@ pub async fn remote_delete(
             .into_response());
     };
     let key = format!("remote-delete-confirm:{token}");
-    let profile_refs: i64 = db(&s)?.query_row(
-        "SELECT (SELECT COUNT(*) FROM mount_profile WHERE remote_id=?) + (SELECT COUNT(*) FROM crypt_profile WHERE remote_id=?)",
-        params![id, id],
-        |r| r.get(0),
-    )?;
-    if profile_refs > 0 {
-        return Err(GatewayError::Message(
-            "remote is still referenced by a mount or crypt profile".into(),
-        ));
-    }
     consume_confirmation(&s, &key, |_expires, stored| {
         let stored_remote = serde_json::from_str::<serde_json::Value>(stored)
             .ok()

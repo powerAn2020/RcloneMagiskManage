@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -103,12 +104,26 @@ fun SecurityScreen(
     var isLoading by remember { mutableStateOf(true) }
     var clientsList by remember { mutableStateOf<List<ClientItem>>(emptyList()) }
     var pairingCodeInfo by remember { mutableStateOf<String?>(null) }
+    var pairingExpiresAt by remember { mutableStateOf<Long?>(null) }
+    var pairingRemainingSeconds by remember { mutableStateOf(0) }
     var showPairingCompleteDialog by remember { mutableStateOf(false) }
     var showRePairOptions by remember { mutableStateOf(false) }
+
+    // Dynamic countdown timer for pairing code
+    LaunchedEffect(pairingExpiresAt) {
+        val target = pairingExpiresAt ?: return@LaunchedEffect
+        while (true) {
+            val diff = ((target - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L).toInt()
+            pairingRemainingSeconds = diff
+            if (diff <= 0) break
+            kotlinx.coroutines.delay(1000L)
+        }
+    }
 
     // LAN configuration states
     var lanConfig by remember { mutableStateOf(GatewayClient.LanConfig(enabled = false)) }
     var deviceIps by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isRefreshingIps by remember { mutableStateOf(false) }
     var lanPortInput by remember { mutableStateOf("8443") }
     var isLanUpdating by remember { mutableStateOf(false) }
 
@@ -283,8 +298,12 @@ fun SecurityScreen(
                             scope.launch {
                                 client.pairingStart().fold(
                                     onSuccess = { res ->
-                                        val code = JSONObject(res).optString("pairingCode")
+                                        val obj = JSONObject(res)
+                                        val code = obj.optString("pairingCode")
+                                        val expiresIn = obj.optLong("expiresIn", 300L)
                                         pairingCodeInfo = code
+                                        pairingExpiresAt = System.currentTimeMillis() + expiresIn * 1000L
+                                        pairingRemainingSeconds = expiresIn.toInt()
                                         onShowMessage("已生成新配对码: $code (300 秒有效)")
                                     },
                                     onFailure = { onShowMessage("启动配对失败: ${it.message}") }
@@ -303,13 +322,70 @@ fun SecurityScreen(
                     }
                 }
                 pairingCodeInfo?.let { code ->
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "当前一次性配对码: $code (300 秒内有效)",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (pairingRemainingSeconds > 0) {
+                        val isUrgent = pairingRemainingSeconds <= 60
+                        Surface(
+                            color = if (isUrgent) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                                    else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("当前一次性配对码: ", style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            text = code,
+                                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isUrgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        text = "⏱️ 有效倒计时: ${pairingRemainingSeconds} 秒",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isUrgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = if (isUrgent) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                IconButton(onClick = {
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("Pairing Code", code))
+                                    onShowMessage("已复制配对码: $code")
+                                }) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "复制配对码")
+                                }
+                            }
+                        }
+                    } else {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                Text(
+                                    text = "⚠️ 配对码已失效过期 (300秒已过)，请重新点击上方按钮获取新配对码",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -370,8 +446,32 @@ fun SecurityScreen(
                 }
 
                 if (lanConfig.enabled) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("本机可用局域网访问地址:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("本机可用局域网访问地址:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    isRefreshingIps = true
+                                    deviceIps = client.getDeviceIpAddresses()
+                                    isRefreshingIps = false
+                                    onShowMessage(if (deviceIps.isEmpty()) "未检测到有效局域网 IP" else "已刷新检测到 ${deviceIps.size} 个有效 IP")
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            if (isRefreshingIps) {
+                                androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "刷新 IP", modifier = Modifier.size(14.dp))
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            Text("刷新 IP", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     if (deviceIps.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

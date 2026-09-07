@@ -894,6 +894,67 @@ info line"#,
     }
 
     #[tokio::test]
+    async fn remote_delete_rejected_if_mount_referenced() {
+        let root = std::env::temp_dir().join(format!("rclone-test-del-ref-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+        let token = "test_token_del_ref";
+        let token_h = hash(token);
+        let t = now();
+        let remote_id = Uuid::new_v4().to_string();
+        let mount_id = Uuid::new_v4().to_string();
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c1','test',?,'ACTIVE',?)",
+                params![token_h, t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c1','remote.delete','*',NULL)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO remote(id,name,type,endpoint,base_path,enabled,created_at,updated_at) VALUES(?,'testdelref','webdav','https://dav.example.com','/',1,100,100)",
+                params![remote_id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO mount_profile(id,name,remote_id,remote_path,mount_point,cache_dir,status,created_at,updated_at) VALUES(?,'m1',?,'/','/mnt/test','/cache','STOPPED',100,100)",
+                params![mount_id, remote_id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO remote_acl(client_id,remote_id,permissions,allowed_prefix) VALUES('c1',?,'*','/')",
+                params![remote_id],
+            )
+            .unwrap();
+        }
+
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        // Empty body DELETE should fail immediately because remote is referenced by mount
+        let err = remote_delete(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(remote_id.clone()),
+            axum::body::Bytes::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("存在关联的挂载配置"));
+
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
+    #[tokio::test]
     async fn system_logs_clear_clears_files_and_audit() {
         assert!(allowed_request("POST", "/api/v1/system/logs/clear"));
         let root = std::env::temp_dir().join(format!("rclone-test-clear-{}", Uuid::new_v4()));

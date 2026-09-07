@@ -383,18 +383,66 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     }
 
     suspend fun getDeviceIpAddresses(): List<String> = withContext(Dispatchers.IO) {
+        val ips = linkedSetOf<String>()
+
+        // 1. Java NetworkInterface with defensive exception handling
         runCatching {
-            val ips = mutableListOf<String>()
-            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return@runCatching emptyList()
-            for (intf in interfaces) {
-                if (intf.isLoopback || !intf.isUp) continue
-                for (addr in intf.inetAddresses) {
-                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
-                        ips.add(addr.hostAddress)
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            if (interfaces != null) {
+                for (intf in interfaces) {
+                    val isLoopback = runCatching { intf.isLoopback }.getOrDefault(false)
+                    if (isLoopback) continue
+                    val isUp = runCatching { intf.isUp }.getOrDefault(true)
+                    if (!isUp) continue
+                    val addrs = runCatching { intf.inetAddresses }.getOrNull() ?: continue
+                    for (addr in addrs) {
+                        if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                            val host = addr.hostAddress
+                            if (!host.isNullOrBlank() && host != "0.0.0.0" && !host.startsWith("127.")) {
+                                ips.add(host)
+                            }
+                        }
                     }
                 }
             }
-            ips
-        }.getOrDefault(emptyList())
+        }
+
+        // 2. Root shell fallback (ip -4 -o addr show)
+        if (ips.isEmpty()) {
+            runCatching {
+                val res = Shell.cmd("ip -4 -o addr show").exec()
+                if (res.isSuccess) {
+                    for (line in res.out) {
+                        val match = Regex("""inet\s+([0-9.]+)/\d+""").find(line)
+                        if (match != null) {
+                            val ip = match.groupValues[1]
+                            if (ip != "127.0.0.1" && ip != "0.0.0.0") {
+                                ips.add(ip)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Routing fallback (ip route get 1.1.1.1)
+        if (ips.isEmpty()) {
+            runCatching {
+                val res = Shell.cmd("ip route get 1.1.1.1").exec()
+                if (res.isSuccess) {
+                    for (line in res.out) {
+                        val match = Regex("""src\s+([0-9.]+)""").find(line)
+                        if (match != null) {
+                            val ip = match.groupValues[1]
+                            if (ip != "127.0.0.1" && ip != "0.0.0.0") {
+                                ips.add(ip)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ips.toList()
     }
 }

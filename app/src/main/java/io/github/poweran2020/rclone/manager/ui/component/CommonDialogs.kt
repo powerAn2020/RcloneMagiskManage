@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,12 +45,23 @@ fun DangerousConfirmDialog(
     title: String,
     message: String,
     tokenBadge: String? = null,
+    showTokenValue: Boolean = false,
     confirmLabel: String = "确认执行",
     isLoading: Boolean = false,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
     if (!show) return
+    var remainingSeconds by remember(show, tokenBadge) { mutableStateOf(60) }
+    LaunchedEffect(show, tokenBadge) {
+        if (!show || tokenBadge.isNullOrBlank()) return@LaunchedEffect
+        remainingSeconds = 60
+        while (remainingSeconds > 0) {
+            kotlinx.coroutines.delay(1000L)
+            remainingSeconds--
+        }
+    }
+
     AlertDialog(
         onDismissRequest = {
             if (!isLoading) onDismiss()
@@ -76,11 +88,26 @@ fun DangerousConfirmDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(message, style = MaterialTheme.typography.bodyMedium)
                 if (!tokenBadge.isNullOrBlank()) {
-                    Text(
-                        "确认令牌: $tokenBadge (60 秒后失效)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
+                    if (remainingSeconds > 0) {
+                        val tokenText = if (showTokenValue) {
+                            "确认令牌: $tokenBadge (有效剩余: ${remainingSeconds}秒)"
+                        } else {
+                            "操作确认有效剩余: ${remainingSeconds}秒"
+                        }
+                        Text(
+                            tokenText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (remainingSeconds <= 15) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                            fontWeight = if (remainingSeconds <= 15) FontWeight.Bold else FontWeight.Normal
+                        )
+                    } else {
+                        Text(
+                            "⚠️ 操作确认已过期失效，请取消后重试",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 if (isLoading) {
                     Spacer(Modifier.height(8.dp))
@@ -108,7 +135,7 @@ fun DangerousConfirmDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                enabled = !isLoading,
+                enabled = !isLoading && (tokenBadge.isNullOrBlank() || remainingSeconds > 0),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
                 if (isLoading) {

@@ -138,7 +138,10 @@ fun SettingsScreen(
                     InfoRow(label = "Root Gateway 版本", value = info.gatewayVersion)
                     InfoRow(label = "API 合约版本", value = info.apiVersion)
                     InfoRow(label = "Root 运行状态", value = if (info.root) "已授权 (Root)" else "非 Root 模式")
-                    InfoRow(label = "局域网 (LAN) 监听", value = if (info.lanEnabled) "已启用 (TLS)" else "未启用 (仅本地 IPC)")
+                    InfoRow(
+                        label = "局域网 (LAN) 监听",
+                        value = if (info.lanEnabled) "已启用 (TLS)" else "未启用 (仅本地 IPC)"
+                    )
                     InfoRow(label = "双向证书认证 (mTLS)", value = if (info.mtlsRequired) "强制启用" else "禁用")
                 } ?: run {
                     Text("正在连接并读取网关环境…", style = MaterialTheme.typography.bodySmall)
@@ -147,7 +150,7 @@ fun SettingsScreen(
         }
 
         item {
-            SectionTitle(text = "紧急与安全模式")
+            SectionTitle(text = "安全模式")
         }
 
         item {
@@ -158,7 +161,11 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Safe Mode (安全模式)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Safe Mode (安全模式)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                         Text(
                             text = if (isSafeMode) "已进入安全模式！所有调度任务暂停，挂载停止。" else "正常运行模式，计划任务与开机恢复正常生效。",
                             style = MaterialTheme.typography.bodySmall,
@@ -193,10 +200,26 @@ fun SettingsScreen(
 
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
-                MaterialTextField(value = logRetentionDays, onValueChange = { logRetentionDays = it }, label = "日志保留天数 (1..365 天)")
-                MaterialTextField(value = logMaxBytes, onValueChange = { logMaxBytes = it }, label = "单个日志轮转阈值 (字节，如 10485760)")
-                MaterialTextField(value = cacheMaxBytes, onValueChange = { cacheMaxBytes = it }, label = "挂载缓存容量上限 (字节，如 34359738368)")
-                MaterialTextField(value = maxConcurrentJobs, onValueChange = { maxConcurrentJobs = it }, label = "全局最大并发任务数 (1..4)")
+                MaterialTextField(
+                    value = logRetentionDays,
+                    onValueChange = { logRetentionDays = it },
+                    label = "日志保留天数 (1..365 天)"
+                )
+                MaterialTextField(
+                    value = logMaxBytes,
+                    onValueChange = { logMaxBytes = it },
+                    label = "单个日志轮转阈值 (字节，如 10485760)"
+                )
+                MaterialTextField(
+                    value = cacheMaxBytes,
+                    onValueChange = { cacheMaxBytes = it },
+                    label = "挂载缓存容量上限 (字节，如 34359738368)"
+                )
+                MaterialTextField(
+                    value = maxConcurrentJobs,
+                    onValueChange = { maxConcurrentJobs = it },
+                    label = "全局最大并发任务数 (1..4)"
+                )
 
                 Spacer(Modifier.height(4.dp))
                 Button(
@@ -232,7 +255,11 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("SQLite WAL 状态备份", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "SQLite WAL 状态备份",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
                     Button(
                         onClick = {
                             scope.launch {
@@ -252,7 +279,11 @@ fun SettingsScreen(
                     }
                 }
                 if (backups.isEmpty()) {
-                    Text("暂无备份文件。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "暂无备份文件。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         backups.take(5).forEach { b ->
@@ -270,7 +301,10 @@ fun SettingsScreen(
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
                 migration?.let { m ->
-                    InfoRow(label = "上游旧配置迁移状态", value = if (m.alreadyMigrated) "已迁移 (完成)" else "尚未检测到迁移")
+                    InfoRow(
+                        label = "上游旧配置迁移状态",
+                        value = if (m.alreadyMigrated) "已迁移 (完成)" else "尚未检测到迁移"
+                    )
                     InfoRow(label = "成功转换任务数", value = "${m.migratedJobs} 个")
                     InfoRow(label = "解析异常忽略数", value = "${m.errorCount} 条")
                 } ?: run {
@@ -292,8 +326,16 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Root 操作与安全审计", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Text("全链路操作事件已记录，敏感文件名经由 SHA-256 哈希脱敏。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                "Root 操作与安全审计",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "全链路操作事件已记录，敏感文件名经由 SHA-256 哈希脱敏。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                     Row(
@@ -383,14 +425,25 @@ fun SettingsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(log.operation, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        log.operation,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                     StatusBadge(status = log.result)
                                 }
-                                Text("时间: ${formatEpochTime(log.timestamp)}", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "时间: ${formatEpochTime(log.timestamp)}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                                 log.clientId?.let { Text("客户端: $it", style = MaterialTheme.typography.bodySmall) }
                                 log.latencyMs?.let { Text("耗时: ${it}ms", style = MaterialTheme.typography.bodySmall) }
                                 log.pathHash?.let {
-                                    Text("路径 Hash: ${it.take(16)}…", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                                    Text(
+                                        "路径 Hash: ${it.take(16)}…",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace
+                                    )
                                 }
                             }
                         }
