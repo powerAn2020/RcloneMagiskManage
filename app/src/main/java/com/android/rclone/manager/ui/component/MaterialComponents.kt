@@ -86,9 +86,9 @@ fun StatusBadge(status: String, modifier: Modifier = Modifier) {
     val (bgColor, textColor) = when {
         upper in setOf("RUNNING", "ONLINE", "ACTIVE", "SUCCESS", "TRUE", "ENABLED") ->
             Color(0xFFE8F5E9) to Color(0xFF2E7D32)
-        upper in setOf("FAILED", "ERROR", "CRASHED", "CANCELLED") ->
+        upper in setOf("FAILED", "ERROR", "CRASHED", "CANCELLED", "OFFLINE") ->
             Color(0xFFFFEBEE) to Color(0xFFC62828)
-        upper in setOf("STARTING", "STOPPING", "QUEUED", "PAUSE_REQUESTED", "CANCEL_REQUESTED") ->
+        upper in setOf("STARTING", "STOPPING", "QUEUED", "PAUSE_REQUESTED", "CANCEL_REQUESTED", "CONNECTING") ->
             Color(0xFFFFF8E1) to Color(0xFFF57F17)
         upper in setOf("PAUSED", "STOPPED", "DISABLED", "FALSE") ->
             Color(0xFFECEFF1) to Color(0xFF455A64)
@@ -114,8 +114,10 @@ fun StatusBadge(status: String, modifier: Modifier = Modifier) {
                 "ENABLED" -> "已启用"
                 "DISABLED" -> "已禁用"
                 "ONLINE" -> "在线"
+                "OFFLINE" -> "离线"
                 "STARTING" -> "启动中"
                 "STOPPING" -> "停止中"
+                "CONNECTING" -> "连接中"
                 else -> status
             },
             style = MaterialTheme.typography.labelSmall,

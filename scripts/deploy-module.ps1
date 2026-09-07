@@ -16,14 +16,14 @@ if (-not (Test-Path $modDir)) {
     exit 1
 }
 
-# 1. Ensure remote directory exists
-& $adb -s $DeviceId shell "mkdir -p /data/adb/modules/rclone-manager/bin /data/adb/rclone-manage/runtime /data/adb/rclone-manage/logs /data/adb/rclone-manage/db"
+# 1. Ensure remote directory exists and clear any legacy system/ overlay directory
+& $adb -s $DeviceId shell "mkdir -p /data/adb/modules/rclone-manager/bin /data/adb/rclone-manage/runtime /data/adb/rclone-manage/logs /data/adb/rclone-manage/db && rm -rf /data/adb/modules/rclone-manager/system"
 
 # 2. Push module files
 & $adb -s $DeviceId push "$modDir\." /data/adb/modules/rclone-manager/
 
 # 3. Ensure permissions
-& $adb -s $DeviceId shell "chmod 755 /data/adb/modules/rclone-manager/bin/rclone-gateway /data/adb/modules/rclone-manager/*.sh && chmod 644 /data/adb/modules/rclone-manager/module.prop"
+& $adb -s $DeviceId shell "chmod 755 /data/adb/modules/rclone-manager/bin/* /data/adb/modules/rclone-manager/*.sh && chmod 644 /data/adb/modules/rclone-manager/module.prop"
 
 # 4. Optional restart
 if ($RestartService) {

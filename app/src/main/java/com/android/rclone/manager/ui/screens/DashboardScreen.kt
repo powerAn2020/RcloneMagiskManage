@@ -9,20 +9,32 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.android.rclone.manager.GatewayClient
+import com.android.rclone.manager.data.model.GatewayErrorParser
 import com.android.rclone.manager.data.model.SystemInfoItem
 import com.android.rclone.manager.data.model.parseJobs
 import com.android.rclone.manager.data.model.parseMounts
@@ -59,7 +72,8 @@ fun DashboardScreen(
 ) {
     val scope = rememberCoroutineScope()
     var isRefreshing by remember { mutableStateOf(false) }
-    var healthStatus by remember { mutableStateOf("正在连接 Gateway…") }
+    var healthStatus by remember { mutableStateOf("CONNECTING") }
+    var healthError by remember { mutableStateOf<String?>(null) }
     var systemInfo by remember { mutableStateOf<SystemInfoItem?>(null) }
     var remotesCount by remember { mutableStateOf(0) }
     var activeJobsCount by remember { mutableStateOf(0) }
@@ -69,8 +83,19 @@ fun DashboardScreen(
         scope.launch {
             isRefreshing = true
             client.health().fold(
-                onSuccess = { healthStatus = if (it.contains("ok", true)) "ONLINE" else it },
-                onFailure = { healthStatus = "OFFLINE: ${it.message}" }
+                onSuccess = {
+                    if (it.contains("ok", true)) {
+                        healthStatus = "ONLINE"
+                        healthError = null
+                    } else {
+                        healthStatus = "OFFLINE"
+                        healthError = it
+                    }
+                },
+                onFailure = {
+                    healthStatus = "OFFLINE"
+                    healthError = it.message ?: "连接失败"
+                }
             )
             if (bearer.isNotBlank()) {
                 client.info(bearer).onSuccess { systemInfo = parseSystemInfo(it) }
@@ -128,28 +153,170 @@ fun DashboardScreen(
                     }
                     StatusBadge(status = healthStatus)
                 }
-                Spacer(Modifier.height(4.dp))
-                if (healthStatus.contains("OFFLINE", true)) {
-                    Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
+                val isOffline = healthStatus.contains("OFFLINE", true)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Button(
                         onClick = {
                             scope.launch {
                                 isRefreshing = true
-                                client.ensureServiceRunning().fold(
+                                client.startGatewayService().fold(
                                     onSuccess = { onShowMessage(it) },
-                                    onFailure = { onShowMessage("拉起失败: ${it.message}") }
+                                    onFailure = {
+                                        val friendly = GatewayErrorParser.parse(it.message ?: "")
+                                        onShowMessage("启动失败: ${friendly.title}")
+                                    }
                                 )
                                 kotlinx.coroutines.delay(1200)
                                 refreshDashboard()
                             }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.weight(1f),
+                        enabled = !isRefreshing
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("一键拉起 Gateway 守护服务")
+                        Text("启动")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                isRefreshing = true
+                                client.stopGatewayService().fold(
+                                    onSuccess = { onShowMessage(it) },
+                                    onFailure = {
+                                        val friendly = GatewayErrorParser.parse(it.message ?: "")
+                                        onShowMessage("停止失败: ${friendly.title}")
+                                    }
+                                )
+                                kotlinx.coroutines.delay(600)
+                                refreshDashboard()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isRefreshing && !isOffline,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("停止")
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isRefreshing = true
+                                client.restartGatewayService().fold(
+                                    onSuccess = { onShowMessage(it) },
+                                    onFailure = {
+                                        val friendly = GatewayErrorParser.parse(it.message ?: "")
+                                        onShowMessage("重启失败: ${friendly.title}")
+                                    }
+                                )
+                                kotlinx.coroutines.delay(1500)
+                                refreshDashboard()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isRefreshing
+                    ) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("重启")
                     }
                 }
+                if (!healthError.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    val clipboard = LocalClipboardManager.current
+                    val friendly = remember(healthError) { GatewayErrorParser.parse(healthError!!) }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = friendly.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(friendly.rawDetails))
+                                        onShowMessage("已复制底层异常日志")
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "复制日志",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = friendly.suggestion,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "原始日志：",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        text = friendly.rawDetails,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
                 systemInfo?.let { info ->
                     InfoRow(label = "rclone 版本", value = info.rcloneVersion)
                     InfoRow(label = "Gateway 版本", value = info.gatewayVersion)

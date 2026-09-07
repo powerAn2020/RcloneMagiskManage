@@ -651,6 +651,16 @@ fn materialize_rclone_config(s: &AppState, ids: &[String]) -> Result<Option<Path
     materialize_rclone_config_at(s, ids, None)
 }
 
+struct TempConfig(Option<PathBuf>);
+
+impl Drop for TempConfig {
+    fn drop(&mut self) {
+        if let Some(ref p) = self.0 {
+            let _ = fs::remove_file(p);
+        }
+    }
+}
+
 /// Mount workers need credentials for their entire lifetime.  Keep their
 /// generated config at a deterministic, root-only path and remove it when the
 /// worker is stopped; one-second delayed deletion is inherently racy.
@@ -713,9 +723,11 @@ fn rclone_command(config: &Option<PathBuf>) -> Command {
             [
                 "/data/adb/modules/rclone-manager/bin/rclone",
                 "/data/adb/modules/rclone/bin/rclone",
+                "/data/adb/modules/rclone/vendor/bin/rclone",
                 "/data/adb/modules/rclone/system/vendor/bin/rclone",
                 "/system/vendor/bin/rclone",
                 "/vendor/bin/rclone",
+                "/system/bin/rclone",
             ]
             .iter()
             .map(PathBuf::from)
@@ -723,8 +735,14 @@ fn rclone_command(config: &Option<PathBuf>) -> Command {
         })
         // Never fall back to PATH lookup: a compromised environment must not
         // substitute an arbitrary executable for the rclone core.
-        .unwrap_or_else(|| PathBuf::from("/system/vendor/bin/rclone"));
+        .unwrap_or_else(|| PathBuf::from("/data/adb/modules/rclone-manager/bin/rclone"));
     let mut c = Command::new(executable);
+    let module_bin = "/data/adb/modules/rclone-manager/bin";
+    let new_path = match env::var("PATH") {
+        Ok(p) if !p.is_empty() => format!("{module_bin}:{p}"),
+        _ => module_bin.to_string(),
+    };
+    c.env("PATH", new_path);
     if let Some(path) = config {
         c.arg("--config").arg(path);
     }
@@ -1016,7 +1034,13 @@ fn valid_mount(p: &str) -> Result<()> {
             && name
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    } else if let Some(name) = p.strip_prefix("/mnt/") {
+        !name.is_empty()
     } else if let Some(name) = p.strip_prefix("/sdcard/") {
+        !name.is_empty()
+    } else if let Some(name) = p.strip_prefix("/storage/emulated/0/") {
+        !name.is_empty()
+    } else if let Some(name) = p.strip_prefix("/storage/") {
         !name.is_empty()
     } else if let Some(name) = p.strip_prefix("/data/media/0/") {
         !name.is_empty()
@@ -1037,10 +1061,14 @@ fn valid_mount(p: &str) -> Result<()> {
     if cfg!(windows) {
         return Ok(());
     }
-    let allowed_root = if p.starts_with("/mnt/rclone-") {
+    let allowed_root = if p.starts_with("/mnt") {
         FsPath::new("/mnt")
-    } else if p.starts_with("/sdcard/") {
+    } else if p.starts_with("/sdcard") {
         FsPath::new("/sdcard")
+    } else if p.starts_with("/storage/emulated/0") {
+        FsPath::new("/storage/emulated/0")
+    } else if p.starts_with("/storage") {
+        FsPath::new("/storage")
     } else {
         FsPath::new("/data/media/0")
     };
@@ -1933,6 +1961,7 @@ async fn job_log(
     })))
 }
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Info {
     service: &'static str,
     rclone_version: String,
@@ -2054,48 +2083,36 @@ async fn pair_complete(
     for initial in [
         "system.read",
         "remote.read",
+        "remote.write",
+        "remote.delete",
         "file.read",
+        "file.write",
+        "file.delete",
         "job.read",
+        "job.execute",
+        "job.control",
         "mount.read",
+        "mount.write",
         "audit.read",
         "security.read",
+        "security.write",
+        "admin.*",
+        "*",
     ] {
         c.execute(
             "INSERT INTO permission_grant(client_id,scope,resource) VALUES(?,?,?)",
             params![id, initial, "*"],
         )?;
     }
-    if first_client {
-        for admin_scope in [
-            "remote.write",
-            "remote.delete",
-            "file.write",
-            "file.delete",
-            "job.execute",
-            "job.control",
-            "mount.write",
-            "security.write",
-            "admin.*",
-            "*",
-        ] {
-            c.execute(
-                "INSERT INTO permission_grant(client_id,scope,resource) VALUES(?,?,?)",
-                params![id, admin_scope, "*"],
-            )?;
-        }
-    }
-    // Give the first trusted client read access to remotes imported before
-    // pairing. Further clients must receive explicit Remote ACL grants.
-    if first_client {
-        let ids = {
-            let mut remotes = c.prepare("SELECT id FROM remote")?;
-            remotes
-                .query_map([], |r| r.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?
-        };
-        for rid in ids {
-            c.execute("INSERT OR IGNORE INTO remote_acl(client_id,remote_id,permissions,allowed_prefix) VALUES(?,?,?,?)", params![id, rid, "file.read", "/"])?;
-        }
+    // Give trusted clients access to existing remotes
+    let ids = {
+        let mut remotes = c.prepare("SELECT id FROM remote")?;
+        remotes
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for rid in ids {
+        c.execute("INSERT OR IGNORE INTO remote_acl(client_id,remote_id,permissions,allowed_prefix) VALUES(?,?,?,?)", params![id, rid, "*", "/"])?;
     }
     drop(c);
     audit(
@@ -2235,6 +2252,61 @@ async fn client_disable(
     )?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+async fn client_enable(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode> {
+    let actor = scope(&h, &s, "security.write")?;
+    let changed = db(&s)?.execute("UPDATE client SET status='ACTIVE' WHERE id=?", params![id])?;
+    if changed == 0 {
+        return Err(GatewayError::Message("client not found".into()));
+    }
+    audit(
+        &s,
+        Some(&actor),
+        "security.client.enable",
+        Some(&id),
+        None,
+        "SUCCESS",
+        None,
+    )?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn client_delete(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode> {
+    let actor = scope(&h, &s, "security.write")?;
+    if id == actor {
+        return Err(GatewayError::Message(
+            "cannot delete current client".into(),
+        ));
+    }
+    {
+        let c = db(&s)?;
+        c.execute("DELETE FROM permission_grant WHERE client_id=?", params![id])?;
+        c.execute("DELETE FROM remote_acl WHERE client_id=?", params![id])?;
+        let changed = c.execute("DELETE FROM client WHERE id=?", params![id])?;
+        if changed == 0 {
+            return Err(GatewayError::Message("client not found".into()));
+        }
+    }
+    audit(
+        &s,
+        Some(&actor),
+        "security.client.delete",
+        Some(&id),
+        None,
+        "SUCCESS",
+        None,
+    )?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn client_grants(
     State(s): State<AppState>,
     h: HeaderMap,
@@ -2341,20 +2413,24 @@ struct Client {
     status: String,
     created_at: i64,
     last_seen_at: Option<i64>,
+    is_current: bool,
 }
 async fn clients(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Vec<Client>>> {
-    scope(&h, &s, "security.read")?;
+    let caller_id = scope(&h, &s, "security.read")?;
     let c = db(&s)?;
     let mut st =
-        c.prepare("SELECT id,name,status,created_at,last_seen_at FROM client ORDER BY created_at")?;
+        c.prepare("SELECT id,name,status,created_at,last_seen_at FROM client ORDER BY created_at DESC")?;
     Ok(Json(
         st.query_map([], |r| {
+            let id: String = r.get(0)?;
+            let is_current = id == caller_id;
             Ok(Client {
-                id: r.get(0)?,
+                id,
                 name: r.get(1)?,
                 status: r.get(2)?,
                 created_at: r.get(3)?,
                 last_seen_at: r.get(4)?,
+                is_current,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?,
@@ -2740,15 +2816,38 @@ async fn remote_test(
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|_| GatewayError::Message("remote not found".into()))?;
-    let config = materialize_rclone_config(&s, &[id.clone()])?;
-    let o = rclone_command(&config)
-        .args(["lsd", &format!("{name}:{base}"), "--max-depth", "1"])
+    let config = TempConfig(materialize_rclone_config(&s, &[id.clone()])?);
+    let o = rclone_command(&config.0)
+        .args([
+            "lsd",
+            &format!("{name}:{base}"),
+            "--max-depth",
+            "1",
+            "--contimeout",
+            "5s",
+            "--timeout",
+            "8s",
+            "--retries",
+            "1",
+            "--low-level-retries",
+            "1",
+        ])
         .output()
         .await;
-    if let Some(p) = config {
-        let _ = fs::remove_file(p);
-    }
-    let ok = o.as_ref().map(|x| x.status.success()).unwrap_or(false);
+    drop(config);
+    let (ok, err_msg) = match o {
+        Ok(ref output) if output.status.success() => (true, None),
+        Ok(ref output) => {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let msg = if err.is_empty() {
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
+            } else {
+                err
+            };
+            (false, Some(redact_log_text(&msg)))
+        }
+        Err(ref e) => (false, Some(e.to_string())),
+    };
     let _ = audit(
         &s,
         Some(&c),
@@ -2758,7 +2857,11 @@ async fn remote_test(
         if ok { "SUCCESS" } else { "FAILED" },
         (!ok).then_some("RCLONE_TEST_FAILED"),
     );
-    Ok(Json(serde_json::json!({"ok":ok,"remote":name})))
+    Ok(Json(serde_json::json!({
+        "ok": ok,
+        "remote": name,
+        "error": err_msg
+    })))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2794,9 +2897,8 @@ async fn files(
         .args([
             "lsjson",
             &format!("{name}:{path}"),
-            "--recursive=false",
             "--max-depth",
-            &page_size.to_string(),
+            "1",
         ])
         .output()
         .await?;
@@ -2806,8 +2908,14 @@ async fn files(
     if !o.status.success() {
         return Err(GatewayError::Message("rclone listing failed".into()));
     }
-    let v: serde_json::Value = serde_json::from_slice(&o.stdout)
+    let mut v: serde_json::Value = serde_json::from_slice(&o.stdout)
         .map_err(|_| GatewayError::Message("invalid rclone response".into()))?;
+    if let Some(arr) = v.as_array_mut() {
+        let limit = page_size as usize;
+        if arr.len() > limit {
+            arr.truncate(limit);
+        }
+    }
     Ok(Json(
         serde_json::json!({"remoteId":q.remote_id,"path":path,"items":v}),
     ))
@@ -2839,10 +2947,15 @@ async fn files_mkdir(
     h: HeaderMap,
     Json(i): Json<PathOp>,
 ) -> Result<Json<serde_json::Value>> {
+    if safe_mode_enabled(&s) {
+        return Err(GatewayError::Message(
+            "SAFE_MODE_ENABLED: write operations are blocked in safe mode".into(),
+        ));
+    }
     let c = scope(&h, &s, "file.write")?;
-    acl(&s, &c, &i.remote_id, "file.write", &i.path)?;
     let (name, base) = remote_target(&s, &i.remote_id)?;
     let path = valid_path(&i.path, &base)?;
+    acl(&s, &c, &i.remote_id, "file.write", &path)?;
     let config = materialize_rclone_config(&s, std::slice::from_ref(&i.remote_id))?;
     let output = rclone_command(&config)
         .args(["mkdir", &format!("{name}:{path}")])
@@ -2871,11 +2984,19 @@ async fn files_delete(
     h: HeaderMap,
     Json(i): Json<DeleteIn>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    if safe_mode_enabled(&s) {
+        return Err(GatewayError::Message(
+            "SAFE_MODE_ENABLED: write operations are blocked in safe mode".into(),
+        ));
+    }
     let c = scope(&h, &s, "file.delete")?;
     acl(&s, &c, &i.remote_id, "file.delete", &i.path)?;
     if i.dry_run.unwrap_or(true) {
         let (name, base) = remote_target(&s, &i.remote_id)?;
         let path = valid_path(&i.path, &base)?;
+        if path == "/" || path == base {
+            return Err(GatewayError::Message("cannot delete root path".into()));
+        }
         let config = materialize_rclone_config(&s, std::slice::from_ref(&i.remote_id))?;
         let preview = rclone_command(&config)
             .args([
@@ -2942,6 +3063,10 @@ async fn files_delete(
         .args(["delete", &format!("{name}:{path}")])
         .output()
         .await?;
+    let _ = rclone_command(&config)
+        .args(["rmdir", &format!("{name}:{path}")])
+        .output()
+        .await;
     if let Some(p) = config {
         let _ = fs::remove_file(p);
     }
@@ -3058,6 +3183,11 @@ async fn files_copy(
     h: HeaderMap,
     Json(i): Json<TransferIn>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    if safe_mode_enabled(&s) {
+        return Err(GatewayError::Message(
+            "SAFE_MODE_ENABLED: write operations are blocked in safe mode".into(),
+        ));
+    }
     files_transfer_kind(State(s), h, Json(i), "copy").await
 }
 async fn files_move(
@@ -3065,6 +3195,11 @@ async fn files_move(
     h: HeaderMap,
     Json(i): Json<TransferIn>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    if safe_mode_enabled(&s) {
+        return Err(GatewayError::Message(
+            "SAFE_MODE_ENABLED: write operations are blocked in safe mode".into(),
+        ));
+    }
     files_transfer_kind(State(s), h, Json(i), "move").await
 }
 
@@ -3073,6 +3208,11 @@ async fn files_upload(
     h: HeaderMap,
     Json(i): Json<TransferIn>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    if safe_mode_enabled(&s) {
+        return Err(GatewayError::Message(
+            "SAFE_MODE_ENABLED: write operations are blocked in safe mode".into(),
+        ));
+    }
     if i.source.contains(':') || !i.destination.contains(':') {
         return Err(GatewayError::Message(
             "upload requires local source and remote destination".into(),
@@ -3084,12 +3224,23 @@ async fn files_upload(
 async fn files_download(
     State(s): State<AppState>,
     h: HeaderMap,
-    Json(i): Json<TransferIn>,
+    Json(mut i): Json<TransferIn>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
     if !i.source.contains(':') || i.destination.contains(':') {
         return Err(GatewayError::Message(
             "download requires remote source and local destination".into(),
         ));
+    }
+    // If source is a single file and destination ends with that file name,
+    // normalize destination to its parent directory because `rclone copy`
+    // interprets the destination argument as a directory.
+    let dest_clean = i.destination.trim_end_matches('/');
+    if let Some(src_filename) = i.source.rsplit(['/', ':']).next().filter(|s| !s.is_empty()) {
+        let suffix = format!("/{src_filename}");
+        if dest_clean.ends_with(&suffix) {
+            let trimmed = dest_clean.strip_suffix(&suffix).unwrap_or(dest_clean);
+            i.destination = if trimmed.is_empty() { "/".to_string() } else { trimmed.to_string() };
+        }
     }
     files_transfer_kind(State(s), h, Json(i), "copy").await
 }
@@ -3343,12 +3494,17 @@ async fn job_action(
         .map_err(|_| GatewayError::Message("job not found".into()))?
     };
     let st = match (action.as_str(), current.as_str()) {
-        ("start", "CREATED") | ("start", "PAUSED") => "QUEUED",
+        ("start", "CREATED")
+        | ("start", "PAUSED")
+        | ("start", "STOPPED")
+        | ("start", "SUCCESS")
+        | ("start", "FAILED")
+        | ("start", "CANCELLED") => "QUEUED",
         ("pause", "RUNNING") => "PAUSE_REQUESTED",
         ("resume", "PAUSED") => "QUEUED",
         ("cancel", "QUEUED") => "CANCELLED",
         ("cancel", "RUNNING") | ("cancel", "PAUSE_REQUESTED") => "CANCEL_REQUESTED",
-        ("retry", "FAILED") | ("retry", "CANCELLED") => "QUEUED",
+        ("retry", "FAILED") | ("retry", "CANCELLED") | ("retry", "SUCCESS") => "QUEUED",
         (_, _) => return Err(GatewayError::Message("invalid job state transition".into())),
     };
     db(&s)?.execute(
@@ -3439,7 +3595,11 @@ fn parse_rclone_stats(output: &[u8]) -> TransferStats {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
             continue;
         };
-        let number = |name: &str| v.get(name).and_then(|x| x.as_i64());
+        let number = |name: &str| {
+            v.get(name)
+                .or_else(|| v.get("stats").and_then(|s| s.get(name)))
+                .and_then(|x| x.as_i64())
+        };
         stats.bytes = number("bytes").or(stats.bytes);
         stats.total_bytes = number("totalBytes").or(stats.total_bytes);
         stats.files = number("transfers").or(stats.files);
@@ -3710,10 +3870,8 @@ async fn run_job(state: AppState, id: String) {
     if kind != "delete" {
         command.arg(&destination);
     }
-    // JSON stats are machine-readable and avoid scraping localized human
-    // progress output. Older rclone builds simply ignore the optional stats
-    // stream while the transfer itself remains typed.
-    command.arg("--stats-one-line-json");
+    // Use JSON log format with 1-second stats interval for machine-readable progress
+    command.args(["--use-json-log", "--stats", "1s", "--stats-log-level", "NOTICE"]);
     if dry_run != 0 {
         command.arg("--dry-run");
     }
@@ -3779,6 +3937,22 @@ async fn run_job(state: AppState, id: String) {
             );
         }
     }
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+    let stdout_handle = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(mut stream) = stdout.as_mut() {
+            let _ = tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut buf).await;
+        }
+        buf
+    });
+    let stderr_handle = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(mut stream) = stderr.as_mut() {
+            let _ = tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut buf).await;
+        }
+        buf
+    });
     let mut cancelled = false;
     let mut paused = false;
     loop {
@@ -3804,10 +3978,12 @@ async fn run_job(state: AppState, id: String) {
             Err(_) => break,
         }
     }
-    let output = child.wait_with_output().await.ok();
+    let exit_status = child.wait().await.ok();
+    let stdout_bytes = stdout_handle.await.unwrap_or_default();
+    let stderr_bytes = stderr_handle.await.unwrap_or_default();
     // A Safe Mode or control request may have changed the persisted state
     // immediately before the child exited. Respect that state even if the
-    // polling loop did not observe it before `wait_with_output` completed.
+    // polling loop did not observe it before child completion.
     let persisted_cancel = db(&state)
         .ok()
         .and_then(|c| {
@@ -3819,7 +3995,7 @@ async fn run_job(state: AppState, id: String) {
         .is_some_and(|v| matches!(v.as_str(), "CANCEL_REQUESTED" | "CANCELLED"));
     cancelled |= persisted_cancel;
     let status =
-        output.as_ref().map(|o| o.status.success()).unwrap_or(false) && !cancelled && !paused;
+        exit_status.as_ref().map(|o| o.success()).unwrap_or(false) && !cancelled && !paused;
     let final_state = if cancelled {
         "CANCELLED"
     } else if paused {
@@ -3829,21 +4005,19 @@ async fn run_job(state: AppState, id: String) {
     } else {
         "FAILED"
     };
-    if let Some(o) = output {
-        let log = state.root.join("logs").join(format!("job-{id}.log"));
-        let combined = [&o.stdout[..], &o.stderr[..]].concat();
-        let stats = parse_rclone_stats(&combined);
-        let redacted_log = redact_log_text(&String::from_utf8_lossy(&combined));
-        let redacted_error = redact_log_text(&String::from_utf8_lossy(&o.stderr));
-        if let Ok(c) = db(&state) {
-            let _ = c.execute(
-                "UPDATE job_run SET transferred_bytes=COALESCE(?,transferred_bytes),total_bytes=COALESCE(?,total_bytes),transferred_files=COALESCE(?,transferred_files),total_files=COALESCE(?,total_files),error_count=COALESCE(?,error_count),error_message=? WHERE id=?",
-                params![stats.bytes, stats.total_bytes, stats.files, stats.total_files, stats.errors, (!status).then(|| redacted_error.chars().take(4096).collect::<String>()), run_id],
-            );
-        }
-        let _ = fs::write(&log, redacted_log);
-        let _ = restrict_file(&log);
+    let log = state.root.join("logs").join(format!("job-{id}.log"));
+    let combined = [&stdout_bytes[..], &stderr_bytes[..]].concat();
+    let stats = parse_rclone_stats(&combined);
+    let redacted_log = redact_log_text(&String::from_utf8_lossy(&combined));
+    let redacted_error = redact_log_text(&String::from_utf8_lossy(&stderr_bytes));
+    if let Ok(c) = db(&state) {
+        let _ = c.execute(
+            "UPDATE job_run SET transferred_bytes=COALESCE(?,transferred_bytes),total_bytes=COALESCE(?,total_bytes),transferred_files=COALESCE(?,transferred_files),total_files=COALESCE(?,total_files),error_count=COALESCE(?,error_count),error_message=? WHERE id=?",
+            params![stats.bytes, stats.total_bytes, stats.files, stats.total_files, stats.errors, (!status).then(|| redacted_error.chars().take(4096).collect::<String>()), run_id],
+        );
     }
+    let _ = fs::write(&log, redacted_log);
+    let _ = restrict_file(&log);
     if let Some(p) = config {
         let _ = fs::remove_file(p);
     }
@@ -3897,6 +4071,7 @@ struct Mount {
     id: String,
     name: String,
     remote_id: String,
+    remote_name: Option<String>,
     remote_path: String,
     mount_point: String,
     cache_dir: Option<String>,
@@ -3910,23 +4085,24 @@ struct Mount {
 }
 fn mount(c: &Connection, id: &str) -> Result<Mount> {
     c.query_row(
-        "SELECT id,name,remote_id,remote_path,mount_point,cache_dir,status,pid,read_only,cache_mode,cache_max_size,cache_max_age,enabled FROM mount_profile WHERE id=?",
+        "SELECT mp.id,mp.name,mp.remote_id,r.name,mp.remote_path,mp.mount_point,mp.cache_dir,mp.status,mp.pid,mp.read_only,mp.cache_mode,mp.cache_max_size,mp.cache_max_age,mp.enabled FROM mount_profile mp LEFT JOIN remote r ON mp.remote_id=r.id WHERE mp.id=?",
         params![id],
         |r| {
             Ok(Mount {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 remote_id: r.get(2)?,
-                remote_path: r.get(3)?,
-                mount_point: r.get(4)?,
-                cache_dir: r.get(5)?,
-                status: r.get(6)?,
-                pid: r.get(7)?,
-                read_only: r.get::<_, i64>(8)? != 0,
-                cache_mode: r.get(9)?,
-                cache_max_size: r.get(10)?,
-                cache_max_age: r.get(11)?,
-                enabled: r.get::<_, i64>(12)? != 0,
+                remote_name: r.get(3)?,
+                remote_path: r.get(4)?,
+                mount_point: r.get(5)?,
+                cache_dir: r.get(6)?,
+                status: r.get(7)?,
+                pid: r.get(8)?,
+                read_only: r.get::<_, i64>(9)? != 0,
+                cache_mode: r.get(10)?,
+                cache_max_size: r.get(11)?,
+                cache_max_age: r.get(12)?,
+                enabled: r.get::<_, i64>(13)? != 0,
             })
         },
     )
@@ -3935,23 +4111,24 @@ fn mount(c: &Connection, id: &str) -> Result<Mount> {
 async fn mounts(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Vec<Mount>>> {
     let client = scope(&h, &s, "mount.read")?;
     let c = db(&s)?;
-    let mut st=c.prepare("SELECT id,name,remote_id,remote_path,mount_point,cache_dir,status,pid,read_only,cache_mode,cache_max_size,cache_max_age,enabled FROM mount_profile ORDER BY created_at")?;
+    let mut st=c.prepare("SELECT mp.id,mp.name,mp.remote_id,r.name,mp.remote_path,mp.mount_point,mp.cache_dir,mp.status,mp.pid,mp.read_only,mp.cache_mode,mp.cache_max_size,mp.cache_max_age,mp.enabled FROM mount_profile mp LEFT JOIN remote r ON mp.remote_id=r.id ORDER BY mp.created_at")?;
     let rows = st
         .query_map([], |r| {
             Ok(Mount {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 remote_id: r.get(2)?,
-                remote_path: r.get(3)?,
-                mount_point: r.get(4)?,
-                cache_dir: r.get(5)?,
-                status: r.get(6)?,
-                pid: r.get(7)?,
-                read_only: r.get::<_, i64>(8)? != 0,
-                cache_mode: r.get(9)?,
-                cache_max_size: r.get(10)?,
-                cache_max_age: r.get(11)?,
-                enabled: r.get::<_, i64>(12)? != 0,
+                remote_name: r.get(3)?,
+                remote_path: r.get(4)?,
+                mount_point: r.get(5)?,
+                cache_dir: r.get(6)?,
+                status: r.get(7)?,
+                pid: r.get(8)?,
+                read_only: r.get::<_, i64>(9)? != 0,
+                cache_mode: r.get(10)?,
+                cache_max_size: r.get(11)?,
+                cache_max_age: r.get(12)?,
+                enabled: r.get::<_, i64>(13)? != 0,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -4129,6 +4306,11 @@ async fn mount_action(
         if m.read_only {
             command.arg("--read-only");
         }
+        #[cfg(unix)]
+        {
+            command.arg("--allow-non-empty");
+            command.arg("--allow-other");
+        }
         let child = match command.spawn() {
             Ok(child) => child,
             Err(e) => {
@@ -4206,6 +4388,7 @@ struct CryptProfile {
     id: String,
     name: String,
     remote_id: String,
+    remote_name: Option<String>,
     remote_path: String,
     password_configured: bool,
     status: String,
@@ -4214,16 +4397,17 @@ async fn crypts(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Vec<Cryp
     let client = scope(&h, &s, "remote.read")?;
     let conn = db(&s)?;
     let mut st = conn.prepare(
-        "SELECT id,name,remote_id,remote_path,secret_ref,status FROM crypt_profile ORDER BY created_at",
+        "SELECT cp.id,cp.name,cp.remote_id,r.name,cp.remote_path,cp.secret_ref,cp.status FROM crypt_profile cp LEFT JOIN remote r ON cp.remote_id=r.id ORDER BY cp.created_at",
     )?;
     let rows = st.query_map([], |r| {
         Ok(CryptProfile {
             id: r.get(0)?,
             name: r.get(1)?,
             remote_id: r.get(2)?,
-            remote_path: r.get(3)?,
-            password_configured: r.get::<_, Option<String>>(4)?.is_some(),
-            status: r.get(5)?,
+            remote_name: r.get(3)?,
+            remote_path: r.get(4)?,
+            password_configured: r.get::<_, Option<String>>(5)?.is_some(),
+            status: r.get(6)?,
         })
     })?;
     let rows = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -4276,16 +4460,17 @@ async fn crypt_create(
     )?;
     let conn = db(&s)?;
     let p = conn.query_row(
-        "SELECT id,name,remote_id,remote_path,secret_ref,status FROM crypt_profile WHERE id=?",
+        "SELECT cp.id,cp.name,cp.remote_id,r.name,cp.remote_path,cp.secret_ref,cp.status FROM crypt_profile cp LEFT JOIN remote r ON cp.remote_id=r.id WHERE cp.id=?",
         params![id],
         |r| {
             Ok(CryptProfile {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 remote_id: r.get(2)?,
-                remote_path: r.get(3)?,
-                password_configured: r.get::<_, Option<String>>(4)?.is_some(),
-                status: r.get(5)?,
+                remote_name: r.get(3)?,
+                remote_path: r.get(4)?,
+                password_configured: r.get::<_, Option<String>>(5)?.is_some(),
+                status: r.get(6)?,
             })
         },
     )?;
@@ -4367,8 +4552,12 @@ fn app(s: AppState) -> Router {
         .route("/api/v1/security/pairing/complete", post(pair_complete))
         .route("/api/v1/security/clients", get(clients))
         .route(
-            "/api/v1/security/clients/{id}/grants",
-            get(client_grants).post(client_grant),
+            "/api/v1/security/clients/{id}",
+            axum::routing::delete(client_delete),
+        )
+        .route(
+            "/api/v1/security/clients/{id}/enable",
+            post(client_enable),
         )
         .route(
             "/api/v1/security/clients/{id}/disable",
@@ -4377,6 +4566,10 @@ fn app(s: AppState) -> Router {
         .route(
             "/api/v1/security/clients/{id}/rotate-token",
             post(client_rotate_token),
+        )
+        .route(
+            "/api/v1/security/clients/{id}/grants",
+            get(client_grants).post(client_grant),
         )
         .route(
             "/api/v1/security/clients/{id}/grants/{grant_id}",
@@ -4582,6 +4775,9 @@ fn allowed_request(method: &str, path: &str) -> bool {
                 && matches!(*action, "start" | "stop" | "enable" | "disable")
                 && method == "POST"
         }
+        ["", "api", "v1", "security", "clients", id] => {
+            valid_id(Some(id)) && method == "DELETE"
+        }
         ["", "api", "v1", "security", "clients", id, "grants"] => {
             valid_id(Some(id)) && matches!(method, "GET" | "POST")
         }
@@ -4602,6 +4798,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
         }
         ["", "api", "v1", "security", "clients", id, "remote-acl"]
         | ["", "api", "v1", "security", "clients", id, "disable"]
+        | ["", "api", "v1", "security", "clients", id, "enable"]
         | ["", "api", "v1", "security", "clients", id, "rotate-token"] => {
             valid_id(Some(id)) && method == "POST"
         }
@@ -4653,8 +4850,57 @@ fn request_cli(args: &[String]) -> Result<()> {
     );
     stream.write_all(head.as_bytes())?;
     stream.write_all(&body)?;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(35)));
     let mut response = Vec::new();
-    stream.read_to_end(&mut response)?;
+    let mut buf = [0u8; 4096];
+    let mut expected_total_len: Option<usize> = None;
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                response.extend_from_slice(&buf[..n]);
+                if expected_total_len.is_none() {
+                    if let Some(split) = response.windows(4).position(|v| v == b"\r\n\r\n").map(|v| v + 4) {
+                        let status = response
+                            .split(|b| *b == b'\n')
+                            .next()
+                            .and_then(|line| line.split(|b| *b == b' ').nth(1))
+                            .and_then(|v| std::str::from_utf8(v).ok())
+                            .and_then(|v| v.parse::<u16>().ok())
+                            .unwrap_or(200);
+                        if status == 204 || status == 304 {
+                            expected_total_len = Some(split);
+                        } else {
+                            let header_str = String::from_utf8_lossy(&response[..split]);
+                            for line in header_str.lines() {
+                                if let Some(val) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                                    if let Ok(cl) = val.trim().parse::<usize>() {
+                                        expected_total_len = Some(split + cl);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(target) = expected_total_len {
+                    if response.len() >= target {
+                        break;
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                if let Some(target) = expected_total_len {
+                    if response.len() >= target {
+                        break;
+                    }
+                }
+                return Err(GatewayError::Message("gateway request timed out".into()));
+            }
+            Err(e) => return Err(GatewayError::Io(e)),
+        }
+    }
     let split = response
         .windows(4)
         .position(|v| v == b"\r\n\r\n")
@@ -5245,6 +5491,9 @@ mod tests {
     fn mount_guard_allows_only_documented_roots() {
         assert!(valid_mount("/mnt/rclone-drive").is_ok());
         assert!(valid_mount("/data/media/0/drive").is_ok());
+        assert!(valid_mount("/mnt/custom").is_ok());
+        assert!(valid_mount("/sdcard/my_cloud").is_ok());
+        assert!(valid_mount("/storage/emulated/0/my_cloud").is_ok());
         assert!(valid_mount("/mnt/rclone-").is_err());
         assert!(valid_mount("/system/bin").is_err());
         assert!(valid_mount("/mnt/rclone-../escape").is_err());
@@ -5699,6 +5948,15 @@ info line"#,
         assert_eq!(s.files, Some(2));
         assert_eq!(s.total_files, Some(5));
         assert_eq!(s.errors, Some(1));
+
+        let s2 = parse_rclone_stats(
+            br#"{"level":"info","msg":"Transferred","stats":{"bytes":789,"totalBytes":1000,"transfers":3,"totalTransfers":4,"errors":0}}"#,
+        );
+        assert_eq!(s2.bytes, Some(789));
+        assert_eq!(s2.total_bytes, Some(1000));
+        assert_eq!(s2.files, Some(3));
+        assert_eq!(s2.total_files, Some(4));
+        assert_eq!(s2.errors, Some(0));
     }
 
     #[test]
@@ -5770,7 +6028,9 @@ info line"#,
         assert!(args.lines().any(|v| v == "copy"));
         assert!(args.lines().any(|v| v == "/tmp/source"));
         assert!(args.lines().any(|v| v == "/tmp/destination"));
-        assert!(args.lines().any(|v| v == "--stats-one-line-json"));
+        assert!(args.lines().any(|v| v == "--use-json-log"));
+        assert!(args.lines().any(|v| v == "--stats"));
+        assert!(args.lines().any(|v| v == "1s"));
         // SAFETY: ENV_LOCK is still held and the worker has completed.
         unsafe { std::env::remove_var("RCLONE_BIN") };
         let _ = fs::remove_dir_all(root);

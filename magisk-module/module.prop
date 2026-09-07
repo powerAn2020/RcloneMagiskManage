@@ -1,6 +1,6 @@
 id=rclone-manager
 name=Android Rclone Root Manager
-version=1.1.0
-versionCode=110
+version=1.2.0
+versionCode=120
 author=Android Rclone Root Manager
-description=Rust Root Gateway for controlled rclone operations
+description=All-in-One Rclone (FUSE3) and Rust Root Gateway for cloud storage management (systemless without overlay)

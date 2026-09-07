@@ -106,12 +106,11 @@ The Android controller must invoke only the fixed Gateway client contract (modul
 
 The request subcommand allow-lists API paths, rejects traversal/control bytes, limits bodies to 64 KiB, and emits only the HTTP response body. It is suitable as the `libsu` bridge for the future Android App.
 
-## Acknowledgements
+## Acknowledgements & Integration
 
-The Magisk lifecycle and rclone-on-Android integration are informed by
-[NewFuture/rclone-fuse3-magisk](https://github.com/NewFuture/rclone-fuse3-magisk).
+The project integrates rclone (FUSE3 enabled) and `fusermount3` based on [NewFuture/rclone-fuse3-magisk](https://github.com/NewFuture/rclone-fuse3-magisk) directly into an **All-in-One Magisk Module (Pure Service, No System Mount)**. Users only need to install a single module without any system partition overlay/mount intrusion.
 The implementation retains an independent Gateway/ACL/Secret Store boundary;
-it does not expose that project's raw rclone RC or shell surface to the App.
+it does not expose raw rclone RC or shell surface to the App.
 Command and crypt behavior follow the [rclone RC](https://rclone.org/rc/),
 [mount](https://rclone.org/commands/rclone_mount/), and
 [crypt](https://rclone.org/crypt/) documentation.

@@ -160,7 +160,10 @@ fun CryptScreen(
                         StatusBadge(status = if (crypt.passwordConfigured) "ENABLED" else "DISABLED")
                     }
                     Spacer(Modifier.height(4.dp))
-                    InfoRow(label = "底层远端", value = crypt.remoteId)
+                    val remoteDisplayName = crypt.remoteName
+                        ?: remotes.find { it.id == crypt.remoteId }?.name
+                        ?: crypt.remoteId
+                    InfoRow(label = "底层远端", value = remoteDisplayName)
                     InfoRow(label = "底层路径", value = crypt.remotePath)
                     InfoRow(label = "密码配置", value = if (crypt.passwordConfigured) "已加密存储" else "未设置")
 

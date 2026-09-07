@@ -154,9 +154,15 @@ fun MountsScreen(
                         StatusBadge(status = mount.status)
                     }
 
-                    Spacer(Modifier.height(4.dp))
-                    InfoRow(label = "远端源", value = "${mount.remoteId}:${mount.remotePath}")
-                    InfoRow(label = "Bind 共享路径", value = "/data/media/0/${mount.name}")
+                    val remoteDisplayName = mount.remoteName
+                        ?: remotes.find { it.id == mount.remoteId }?.name
+                        ?: mount.remoteId
+                    InfoRow(label = "远端源", value = "${remoteDisplayName}:${mount.remotePath}")
+                    if (mount.mountPoint.startsWith("/mnt/rclone-")) {
+                        InfoRow(label = "Bind 共享路径", value = "/data/media/0/${mount.name}")
+                    } else {
+                        InfoRow(label = "挂载类型", value = "直接挂载 (${mount.mountPoint})")
+                    }
                     InfoRow(label = "缓存配置", value = "${mount.cacheMode} · ${mount.cacheMaxSize} · ${mount.cacheMaxAge}")
                     mount.pid?.let { InfoRow(label = "Worker PID", value = it.toString()) }
 
@@ -257,6 +263,8 @@ fun CreateMountDialog(
     var name by remember { mutableStateOf(TextFieldValue("")) }
     var selectedRemoteId by remember { mutableStateOf(remotes.firstOrNull()?.id ?: "") }
     var remotePath by remember { mutableStateOf(TextFieldValue("/")) }
+    var mountPoint by remember { mutableStateOf(TextFieldValue("")) }
+    var isCustomMountPoint by remember { mutableStateOf(false) }
     var cacheMode by remember { mutableStateOf("full") }
     var cacheMaxSize by remember { mutableStateOf(TextFieldValue("32G")) }
     var cacheMaxAge by remember { mutableStateOf(TextFieldValue("36h")) }
@@ -276,7 +284,17 @@ fun CreateMountDialog(
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                MaterialTextField(value = name, onValueChange = { name = it }, label = "Profile 名称 (英文标识符)")
+                MaterialTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        if (!isCustomMountPoint) {
+                            val trimmed = it.text.trim()
+                            mountPoint = TextFieldValue(if (trimmed.isNotBlank()) "/mnt/rclone-$trimmed" else "")
+                        }
+                    },
+                    label = "Profile 名称 (英文标识符)"
+                )
 
                 // Remote selector
                 ExposedDropdownMenuBox(
@@ -313,9 +331,56 @@ fun CreateMountDialog(
 
                 MaterialTextField(value = remotePath, onValueChange = { remotePath = it }, label = "远端子路径 (默认 /)")
 
-                val mountPointDisplay = if (name.text.isNotBlank()) "/mnt/rclone-${name.text.trim()}" else "/mnt/rclone-<name>"
-                Text("挂载点: $mountPointDisplay", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                Text("对应共享目录: /data/media/0/${name.text.trim()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                MaterialTextField(
+                    value = mountPoint,
+                    onValueChange = {
+                        mountPoint = it
+                        isCustomMountPoint = true
+                    },
+                    label = "挂载点路径 (Mount Point)"
+                )
+
+                Text("常用挂载点预设:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val trimmedName = name.text.trim().ifBlank { "name" }
+                    val presets = listOf(
+                        "/mnt/rclone-$trimmedName" to "默认 (/mnt)",
+                        "/sdcard/$trimmedName" to "内部存储",
+                        "/storage/emulated/0/$trimmedName" to "标准存储"
+                    )
+                    presets.forEach { (path, label) ->
+                        OutlinedButton(
+                            onClick = {
+                                mountPoint = TextFieldValue(path)
+                                isCustomMountPoint = true
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text(label, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                val currentMountPoint = mountPoint.text.trim().ifBlank {
+                    if (name.text.isNotBlank()) "/mnt/rclone-${name.text.trim()}" else ""
+                }
+                if (currentMountPoint.startsWith("/mnt/rclone-")) {
+                    Text(
+                        "提示: /mnt/rclone-* 会由 Magisk 自动创建 /data/media/0/${name.text.trim().ifBlank { "<name>" }} 的 bind 共享映射",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else if (currentMountPoint.isNotBlank()) {
+                    Text(
+                        "直接挂载点: $currentMountPoint",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
 
                 // Cache mode
                 ExposedDropdownMenuBox(
@@ -369,7 +434,7 @@ fun CreateMountDialog(
                 onClick = {
                     val n = name.text.trim()
                     if (n.isBlank() || selectedRemoteId.isBlank()) return@Button
-                    val mp = "/mnt/rclone-$n"
+                    val mp = mountPoint.text.trim().ifBlank { "/mnt/rclone-$n" }
                     onSubmit(
                         n,
                         selectedRemoteId,

@@ -1,6 +1,7 @@
 #!/system/bin/sh
 umask 077
 MODDIR=${0%/*}
+export PATH="$MODDIR/bin:$PATH"
 ROOT=/data/adb/rclone-manage
 SOCKET="$ROOT/runtime/gateway.sock"
 LOG="$ROOT/logs/gateway.log"

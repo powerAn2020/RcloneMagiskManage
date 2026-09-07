@@ -6,6 +6,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+fun JSONObject.optNullableString(name: String): String? {
+    if (!has(name) || isNull(name)) return null
+    val v = optString(name).trim()
+    return if (v.isEmpty() || v.equals("null", ignoreCase = true)) null else v
+}
+
 data class RemoteItem(
     val id: String,
     val name: String,
@@ -30,7 +36,8 @@ fun parseRemotes(raw: String): List<RemoteItem> = runCatching {
     buildList {
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
-            val endpoint = item.optString("endpoint", item.optString("path", ""))
+            val endpoint = listOf(item.optNullableString("endpoint"), item.optNullableString("path"))
+                .firstOrNull { !it.isNullOrBlank() } ?: ""
             add(
                 RemoteItem(
                     id = item.optString("id", item.optString("name")),
@@ -38,7 +45,7 @@ fun parseRemotes(raw: String): List<RemoteItem> = runCatching {
                     type = item.optString("type", "unknown"),
                     endpoint = endpoint,
                     enabled = item.optBoolean("enabled", true),
-                    secretRef = item.optString("secretRef").takeIf { it.isNotBlank() },
+                    secretRef = item.optNullableString("secretRef"),
                 )
             )
         }
@@ -123,7 +130,7 @@ fun parseJobs(raw: String): List<JobItem> = runCatching {
                     source = item.optString("source"),
                     destination = item.optString("destination"),
                     dryRun = item.optBoolean("dryRun", false),
-                    schedule = item.optString("schedule").takeIf { it.isNotBlank() },
+                    schedule = item.optNullableString("schedule"),
                     nextRunAt = if (item.has("nextRunAt") && !item.isNull("nextRunAt")) item.optLong("nextRunAt") else null,
                 )
             )
@@ -165,8 +172,8 @@ fun parseJobRuns(raw: String): List<JobRunItem> = runCatching {
                     transferredFiles = if (item.has("transferredFiles") && !item.isNull("transferredFiles")) item.optLong("transferredFiles") else null,
                     totalFiles = if (item.has("totalFiles") && !item.isNull("totalFiles")) item.optLong("totalFiles") else null,
                     errorCount = if (item.has("errorCount") && !item.isNull("errorCount")) item.optLong("errorCount") else null,
-                    errorCode = item.optString("errorCode").takeIf { it.isNotBlank() },
-                    errorMessage = item.optString("errorMessage").takeIf { it.isNotBlank() },
+                    errorCode = item.optNullableString("errorCode"),
+                    errorMessage = item.optNullableString("errorMessage"),
                 )
             )
         }
@@ -177,6 +184,7 @@ data class MountProfileItem(
     val id: String,
     val name: String,
     val remoteId: String,
+    val remoteName: String? = null,
     val remotePath: String,
     val mountPoint: String,
     val cacheDir: String,
@@ -199,6 +207,7 @@ fun parseMounts(raw: String): List<MountProfileItem> = runCatching {
                     id = item.optString("id"),
                     name = item.optString("name", "未命名挂载"),
                     remoteId = item.optString("remoteId"),
+                    remoteName = item.optNullableString("remoteName"),
                     remotePath = item.optString("remotePath", "/"),
                     mountPoint = item.optString("mountPoint"),
                     cacheDir = item.optString("cacheDir"),
@@ -219,6 +228,7 @@ data class CryptProfileItem(
     val id: String,
     val name: String,
     val remoteId: String,
+    val remoteName: String? = null,
     val remotePath: String,
     val passwordConfigured: Boolean,
 )
@@ -233,6 +243,7 @@ fun parseCrypts(raw: String): List<CryptProfileItem> = runCatching {
                     id = item.optString("id"),
                     name = item.optString("name", "Crypt"),
                     remoteId = item.optString("remoteId"),
+                    remoteName = item.optNullableString("remoteName"),
                     remotePath = item.optString("remotePath", "/"),
                     passwordConfigured = item.optBoolean("passwordConfigured", false),
                 )
@@ -245,8 +256,10 @@ data class ClientItem(
     val id: String,
     val name: String,
     val enabled: Boolean,
+    val status: String = "ACTIVE",
     val createdAt: Long,
     val lastUsedAt: Long?,
+    val isCurrent: Boolean = false,
 )
 
 fun parseClients(raw: String): List<ClientItem> = runCatching {
@@ -254,13 +267,20 @@ fun parseClients(raw: String): List<ClientItem> = runCatching {
     buildList {
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
+            val status = item.optString("status", if (item.optBoolean("enabled", true)) "ACTIVE" else "REVOKED")
             add(
                 ClientItem(
                     id = item.optString("id"),
                     name = item.optString("name", "未知客户端"),
-                    enabled = item.optBoolean("enabled", true),
+                    enabled = status == "ACTIVE",
+                    status = status,
                     createdAt = item.optLong("createdAt"),
-                    lastUsedAt = if (item.has("lastUsedAt") && !item.isNull("lastUsedAt")) item.optLong("lastUsedAt") else null,
+                    lastUsedAt = if (item.has("lastSeenAt") && !item.isNull("lastSeenAt")) {
+                        item.optLong("lastSeenAt")
+                    } else if (item.has("lastUsedAt") && !item.isNull("lastUsedAt")) {
+                        item.optLong("lastUsedAt")
+                    } else null,
+                    isCurrent = item.optBoolean("isCurrent", false),
                 )
             )
         }
@@ -305,14 +325,31 @@ data class SystemInfoItem(
 
 fun parseSystemInfo(raw: String): SystemInfoItem = runCatching {
     val obj = JSONObject(raw.trim())
+    val rcloneVer = when {
+        obj.has("rcloneVersion") && obj.getString("rcloneVersion").isNotBlank() -> obj.getString("rcloneVersion")
+        obj.has("rclone_version") && obj.getString("rclone_version").isNotBlank() -> obj.getString("rclone_version")
+        else -> "未知"
+    }
+    val gwVer = when {
+        obj.has("gatewayVersion") && obj.getString("gatewayVersion").isNotBlank() -> obj.getString("gatewayVersion")
+        obj.has("gateway_version") && obj.getString("gateway_version").isNotBlank() -> obj.getString("gateway_version")
+        else -> "1.1.0"
+    }
+    val apiVer = when {
+        obj.has("apiVersion") && obj.getString("apiVersion").isNotBlank() -> obj.getString("apiVersion")
+        obj.has("api_version") && obj.getString("api_version").isNotBlank() -> obj.getString("api_version")
+        else -> "1.1.0"
+    }
+    val lan = if (obj.has("lanEnabled")) obj.optBoolean("lanEnabled", false) else obj.optBoolean("lan_enabled", false)
+    val mtls = if (obj.has("mtlsRequired")) obj.optBoolean("mtlsRequired", false) else obj.optBoolean("mtls_required", false)
     SystemInfoItem(
         service = obj.optString("service", "rclone-gateway"),
-        rcloneVersion = obj.optString("rcloneVersion", "未知"),
-        gatewayVersion = obj.optString("gatewayVersion", "1.1.0"),
-        apiVersion = obj.optString("apiVersion", "1.1.0"),
+        rcloneVersion = if (rcloneVer == "unavailable") "未知" else rcloneVer,
+        gatewayVersion = gwVer,
+        apiVersion = apiVer,
         root = obj.optBoolean("root", false),
-        lanEnabled = obj.optBoolean("lanEnabled", false),
-        mtlsRequired = obj.optBoolean("mtlsRequired", false),
+        lanEnabled = lan,
+        mtlsRequired = mtls,
     )
 }.getOrElse {
     SystemInfoItem("rclone-gateway", "未知", "1.1.0", "1.1.0", root = false, lanEnabled = false, mtlsRequired = false)
@@ -382,14 +419,14 @@ fun parseAuditLogs(raw: String): List<AuditLogItem> = runCatching {
                 AuditLogItem(
                     id = item.optLong("id"),
                     timestamp = item.optLong("timestamp"),
-                    clientId = item.optString("clientId").takeIf { it.isNotBlank() },
+                    clientId = item.optNullableString("clientId"),
                     uid = if (item.has("uid") && !item.isNull("uid")) item.optLong("uid") else null,
                     operation = item.optString("operation"),
-                    resource = item.optString("resource").takeIf { it.isNotBlank() },
-                    remoteId = item.optString("remoteId").takeIf { it.isNotBlank() },
-                    pathHash = item.optString("pathHash").takeIf { it.isNotBlank() },
+                    resource = item.optNullableString("resource"),
+                    remoteId = item.optNullableString("remoteId"),
+                    pathHash = item.optNullableString("pathHash"),
                     result = item.optString("result", "UNKNOWN"),
-                    errorCode = item.optString("errorCode").takeIf { it.isNotBlank() },
+                    errorCode = item.optNullableString("errorCode"),
                     latencyMs = if (item.has("latencyMs") && !item.isNull("latencyMs")) item.optLong("latencyMs") else null,
                 )
             )
@@ -427,3 +464,12 @@ fun formatEpochTime(epochSecondsOrMillis: Long): String {
     val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     return sdf.format(Date(millis))
 }
+
+data class LocalFileItem(
+    val name: String,
+    val path: String,
+    val isDirectory: Boolean,
+    val size: Long = 0L,
+    val lastModified: Long = 0L
+)
+

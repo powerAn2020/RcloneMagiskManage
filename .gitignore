@@ -1,8 +1,12 @@
 /target/
 /.idea/
+/dist/
+/scratch/
+magisk-module/prebuilt/
 *.apk
 *.zip
 *.hprof
+*.jar
 
 # Gradle & Android build files
 .gradle/

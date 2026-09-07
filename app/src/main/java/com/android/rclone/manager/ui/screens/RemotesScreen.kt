@@ -76,6 +76,7 @@ fun RemotesScreen(
     var editingRemote by remember { mutableStateOf<RemoteItem?>(null) }
     var exportJson by remember { mutableStateOf<String?>(null) }
     var deleteCandidate by remember { mutableStateOf<Pair<RemoteItem, String>?>(null) } // RemoteItem to confirmationToken
+    var isDeletingRemote by remember { mutableStateOf(false) }
 
     val loadRemotes = {
         scope.launch {
@@ -147,8 +148,9 @@ fun RemotesScreen(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(remote.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            val endpointText = remote.endpoint.takeIf { it.isNotBlank() && it != "null" }
                             Text(
-                                text = "类型: ${remote.type}" + if (remote.endpoint.isNotBlank()) " · ${remote.endpoint}" else "",
+                                text = "类型: ${remote.type}" + if (endpointText != null) " · $endpointText" else "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -167,8 +169,16 @@ fun RemotesScreen(
                                 scope.launch {
                                     onShowMessage("正在测试连接 ${remote.name}…")
                                     client.testRemote(remote.id, bearer).fold(
-                                        onSuccess = { onShowMessage("连接测试结果: $it") },
-                                        onFailure = { onShowMessage("测试失败: ${it.message}") }
+                                        onSuccess = { res ->
+                                            val json = runCatching { JSONObject(res) }.getOrNull()
+                                            if (json?.optBoolean("ok") == true) {
+                                                onShowMessage("测试成功: 远端服务连接正常")
+                                            } else {
+                                                val errMsg = json?.optString("error")?.ifBlank { null } ?: "无法连接到该远端服务"
+                                                onShowMessage("测试失败: $errMsg")
+                                            }
+                                        },
+                                        onFailure = { onShowMessage("测试请求失败: ${it.message}") }
                                     )
                                 }
                             }
@@ -293,19 +303,29 @@ fun RemotesScreen(
             message = "此操作将从数据库和运行时移除该远端配置。若有挂载关联请先停止挂载。",
             tokenBadge = token,
             confirmLabel = "确认删除",
+            isLoading = isDeletingRemote,
             onConfirm = {
                 scope.launch {
+                    isDeletingRemote = true
                     client.remoteDelete(remote.id, bearer, token).fold(
                         onSuccess = {
+                            isDeletingRemote = false
                             onShowMessage("远端已成功删除")
                             deleteCandidate = null
                             loadRemotes()
                         },
-                        onFailure = { onShowMessage("删除失败: ${it.message}") }
+                        onFailure = {
+                            isDeletingRemote = false
+                            onShowMessage("删除失败: ${it.message}")
+                        }
                     )
                 }
             },
-            onDismiss = { deleteCandidate = null }
+            onDismiss = {
+                if (!isDeletingRemote) {
+                    deleteCandidate = null
+                }
+            }
         )
     }
 

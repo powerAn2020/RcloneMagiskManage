@@ -5,6 +5,7 @@ import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import com.android.rclone.manager.data.model.LocalFileItem
 
 /** Fixed typed bridge. No raw rclone RC, shell, or user supplied flags. */
 class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtime/gateway.sock") {
@@ -29,6 +30,12 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
 
     suspend fun createJob(type: String, source: String, destination: String, token: String, schedule: String? = null, networkPolicy: String? = null, batteryPolicy: String? = null, dryRun: Boolean = false, options: JSONObject? = null): Result<String> =
         request("POST", "/api/v1/jobs", token, JSONObject().put("type", type).put("source", source).put("destination", destination).put("dryRun", dryRun).apply { if (!schedule.isNullOrBlank()) put("schedule", schedule); if (!networkPolicy.isNullOrBlank()) put("networkPolicy", networkPolicy); if (!batteryPolicy.isNullOrBlank()) put("batteryPolicy", batteryPolicy); if (options != null) put("options", options) })
+
+    suspend fun job(id: String, token: String): Result<String> =
+        request("GET", "/api/v1/jobs/${encode(id)}", token)
+
+    suspend fun deleteJob(id: String, token: String): Result<String> =
+        request("DELETE", "/api/v1/jobs/${encode(id)}", token)
 
     suspend fun jobRuns(id: String, token: String): Result<String> =
         request("GET", "/api/v1/jobs/${encode(id)}/runs", token)
@@ -105,15 +112,62 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         request("GET", "/api/v1/remotes/${encode(id)}/export", token)
 
     suspend fun clients(token: String): Result<String> = request("GET", "/api/v1/security/clients", token)
-    suspend fun grants(clientId: String, token: String): Result<String> = request("GET", "/api/v1/security/clients/${java.net.URLEncoder.encode(clientId, "UTF-8")}/grants", token)
+    suspend fun deleteClient(clientId: String, token: String): Result<String> =
+        request("DELETE", "/api/v1/security/clients/${encode(clientId)}", token)
+    suspend fun enableClient(clientId: String, token: String): Result<String> =
+        request("POST", "/api/v1/security/clients/${encode(clientId)}/enable", token)
+    suspend fun disableClient(clientId: String, token: String): Result<String> =
+        request("POST", "/api/v1/security/clients/${encode(clientId)}/disable", token)
+    suspend fun rotateToken(clientId: String, token: String): Result<String> =
+        request("POST", "/api/v1/security/clients/${encode(clientId)}/rotate-token", token)
+    suspend fun grants(clientId: String, token: String): Result<String> =
+        request("GET", "/api/v1/security/clients/${encode(clientId)}/grants", token)
     suspend fun grant(clientId: String, scope: String, resource: String, token: String): Result<String> =
         request("POST", "/api/v1/security/clients/${encode(clientId)}/grants", token, JSONObject().put("scope", scope).put("resource", resource))
     suspend fun revokeGrant(clientId: String, grantId: Long, token: String): Result<String> =
         request("DELETE", "/api/v1/security/clients/${encode(clientId)}/grants/$grantId", token)
-    suspend fun remoteAcl(clientId: String, remoteId: String, permissions: String, prefix: String, token: String): Result<String> =
-        request("POST", "/api/v1/security/clients/${encode(clientId)}/remote-acl", token, JSONObject().put("remoteId", remoteId).put("permissions", permissions.split(',').map { it.trim() }).put("allowedPrefix", prefix))
-    suspend fun disableClient(clientId: String, token: String): Result<String> = request("POST", "/api/v1/security/clients/${java.net.URLEncoder.encode(clientId, "UTF-8")}/disable", token)
-    suspend fun rotateToken(clientId: String, token: String): Result<String> = request("POST", "/api/v1/security/clients/${java.net.URLEncoder.encode(clientId, "UTF-8")}/rotate-token", token)
+    suspend fun remoteAcl(clientId: String, remoteId: String, permissions: String, prefix: String, token: String): Result<String> {
+        val permArray = org.json.JSONArray()
+        permissions.split(',').map { it.trim() }.filter { it.isNotBlank() }.forEach { permArray.put(it) }
+        val body = JSONObject()
+            .put("remoteId", remoteId)
+            .put("permissions", permArray)
+            .put("allowedPrefix", prefix)
+        return request("POST", "/api/v1/security/clients/${encode(clientId)}/remote-acl", token, body)
+    }
+
+    suspend fun startGatewayService(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val start = Shell.cmd("sh /data/adb/modules/rclone-manager/service.sh").exec()
+            check(start.isSuccess) { start.err.joinToString("\n").ifBlank { "启动 Gateway 服务失败" } }
+            "已启动 Gateway 守护进程"
+        }
+    }
+
+    suspend fun stopGatewayService(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cmd = listOf(
+                "/data/adb/modules/rclone-manager/bin/rclone-gateway stop --root /data/adb/rclone-manage 2>/dev/null || true",
+                "kill $(cat /data/adb/rclone-manage/runtime/gateway-watchdog.pid 2>/dev/null) 2>/dev/null || true",
+                "kill -9 $(cat /data/adb/rclone-manage/runtime/gateway.pid 2>/dev/null) 2>/dev/null || true",
+                "pkill -9 -f 'rclone-gateway serve' 2>/dev/null || true",
+                "rm -f /data/adb/rclone-manage/runtime/gateway.sock /data/adb/rclone-manage/runtime/gateway.pid /data/adb/rclone-manage/runtime/gateway-watchdog.pid"
+            ).joinToString("; ")
+            val res = Shell.cmd(cmd).exec()
+            check(res.isSuccess) { res.err.joinToString("\n").ifBlank { "停止 Gateway 服务失败" } }
+            "已停止 Gateway 服务"
+        }
+    }
+
+    suspend fun restartGatewayService(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            stopGatewayService()
+            kotlinx.coroutines.delay(600)
+            val start = Shell.cmd("sh /data/adb/modules/rclone-manager/service.sh").exec()
+            check(start.isSuccess) { start.err.joinToString("\n").ifBlank { "重启 Gateway 服务失败" } }
+            "已重启 Gateway 服务"
+        }
+    }
 
     suspend fun ensureServiceRunning(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
@@ -138,6 +192,56 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         }
     }
 
+    suspend fun listLocalDirectory(dirPath: String): List<LocalFileItem> = withContext(Dispatchers.IO) {
+        val cleanPath = if (dirPath.isBlank()) "/data/media/0/Download" else dirPath.trimEnd('/').ifEmpty { "/" }
+        
+        // 1. Try standard Java File
+        val dir = java.io.File(cleanPath)
+        val files = runCatching { dir.listFiles() }.getOrNull()
+        if (files != null) {
+            return@withContext files.map { f ->
+                LocalFileItem(
+                    name = f.name,
+                    path = f.absolutePath,
+                    isDirectory = f.isDirectory,
+                    size = if (f.isDirectory) 0L else f.length(),
+                    lastModified = f.lastModified()
+                )
+            }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+        }
+
+        // 2. Fallback to root shell
+        val outList = mutableListOf<String>()
+        val cmd = "ls -la ${quote(cleanPath)}"
+        val result = Shell.cmd(cmd).to(outList).exec()
+        if (!result.isSuccess) return@withContext emptyList()
+
+        val list = mutableListOf<LocalFileItem>()
+        for (line in outList) {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty() || trimmed.startsWith("total ")) continue
+            val parts = trimmed.split("\\s+".toRegex())
+            if (parts.size >= 8) {
+                val perms = parts[0]
+                val isDir = perms.startsWith("d")
+                val size = parts[4].toLongOrNull() ?: 0L
+                val name = parts.subList(7, parts.size).joinToString(" ")
+                if (name == "." || name == "..") continue
+                val fullPath = if (cleanPath == "/") "/$name" else "$cleanPath/$name"
+                list.add(
+                    LocalFileItem(
+                        name = name,
+                        path = fullPath,
+                        isDirectory = isDir,
+                        size = if (isDir) 0L else size,
+                        lastModified = 0L
+                    )
+                )
+            }
+        }
+        list.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+    }
+
     private fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
     private suspend fun request(method: String, path: String, token: String? = null, body: JSONObject? = null): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
@@ -147,9 +251,26 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
             val args = mutableListOf("/data/adb/modules/rclone-manager/bin/rclone-gateway", "request", "--socket", socket, "--method", method, "--path", path)
             if (token != null) { require(!token.any { it == '\u0000' || it == '\r' || it == '\n' }); args += listOf("--token", token) }
             if (body != null) args += listOf("--body-base64", Base64.encodeToString(body.toString().toByteArray(), Base64.NO_WRAP))
-            val result = Shell.cmd(args.joinToString(" ") { quote(it) }).exec()
-            val output = result.out.joinToString("\n")
-            check(result.isSuccess) { result.err.joinToString("\n").ifBlank { output.ifBlank { "gateway request failed" } } }
+            val outList = mutableListOf<String>()
+            val errList = mutableListOf<String>()
+            val result = Shell.cmd(args.joinToString(" ") { quote(it) }).to(outList, errList).exec()
+            val output = outList.joinToString("\n")
+            val err = errList.joinToString("\n")
+            android.util.Log.i("RcloneGateway", "req: $method $path -> code=${result.code}, out len=${output.length}, err=$err")
+            val errMsg = if (output.isNotBlank()) {
+                val parsed = runCatching {
+                    val obj = JSONObject(output)
+                    obj.optString("message").ifBlank { obj.optString("code") }
+                }.getOrNull()
+                if (!parsed.isNullOrBlank()) parsed else err.ifBlank { output }
+            } else {
+                if (Shell.getCachedShell()?.isRoot == false) {
+                    "未获得 ROOT 权限，请在 Magisk / KernelSU 中为本应用开启授权"
+                } else {
+                    err.ifBlank { "gateway request failed (code=${result.code})" }
+                }
+            }
+            check(result.isSuccess) { errMsg }
             output
         }
     }

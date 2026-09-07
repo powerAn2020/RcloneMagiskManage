@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.android.rclone.manager.ui.component.RootPermissionDialog
 import com.android.rclone.manager.ui.component.TokenEditorDialog
 import com.android.rclone.manager.ui.screens.CryptScreen
 import com.android.rclone.manager.ui.screens.DashboardScreen
@@ -49,22 +50,33 @@ import com.android.rclone.manager.ui.screens.RemotesScreen
 import com.android.rclone.manager.ui.screens.SecurityScreen
 import com.android.rclone.manager.ui.screens.SettingsScreen
 import com.android.rclone.manager.ui.theme.RcloneTheme
+import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+enum class RootStatus {
+    CHECKING,
+    GRANTED,
+    DENIED
+}
 
 class MainActivity : ComponentActivity() {
     private val client = GatewayClient()
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var tokenStore: TokenStore
     private val tokenState = mutableStateOf("")
+    private val rootStatusState = mutableStateOf(RootStatus.CHECKING)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tokenStore = TokenStore(this)
         tokenState.value = tokenStore.read()
+
+        checkRootPermission(initial = true)
 
         setContent {
             RcloneTheme {
@@ -72,12 +84,59 @@ class MainActivity : ComponentActivity() {
                     client = client,
                     tokenStore = tokenStore,
                     bearer = tokenState.value,
+                    rootStatus = rootStatusState.value,
+                    onRetryRoot = { checkRootPermission(forceRefresh = true) },
+                    onOpenRootManager = { openRootManager() },
+                    onExitApp = { finish() },
                     onTokenChanged = { newToken ->
                         tokenState.value = newToken
                         tokenStore.write(newToken)
                     }
                 )
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkRootPermission(forceRefresh = rootStatusState.value == RootStatus.DENIED)
+    }
+
+    private fun checkRootPermission(forceRefresh: Boolean = false, initial: Boolean = false) {
+        activityScope.launch {
+            if (rootStatusState.value == RootStatus.DENIED || initial) {
+                rootStatusState.value = RootStatus.CHECKING
+            }
+            val isRoot = withContext(Dispatchers.IO) {
+                if (forceRefresh) {
+                    runCatching { Shell.getCachedShell()?.close() }
+                }
+                runCatching {
+                    Shell.getShell().isRoot
+                }.getOrDefault(false)
+            }
+            rootStatusState.value = if (isRoot) RootStatus.GRANTED else RootStatus.DENIED
+        }
+    }
+
+    private fun openRootManager() {
+        val managerPackages = listOf(
+            "me.weishu.kernelsu",
+            "com.topjohnwu.magisk",
+            "org.apatch"
+        )
+        for (pkg in managerPackages) {
+            val intent = packageManager.getLaunchIntentForPackage(pkg)
+                ?: android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                    addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                    setPackage(pkg)
+                }
+            val resolved = runCatching {
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                true
+            }.getOrDefault(false)
+            if (resolved) return
         }
     }
 
@@ -93,6 +152,10 @@ private fun RcloneApp(
     client: GatewayClient,
     tokenStore: TokenStore,
     bearer: String,
+    rootStatus: RootStatus,
+    onRetryRoot: () -> Unit,
+    onOpenRootManager: () -> Unit,
+    onExitApp: () -> Unit,
     onTokenChanged: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -238,5 +301,14 @@ private fun RcloneApp(
             onSave = { onTokenChanged(it); showMessage("Token 已保存并加密到 Keystore") },
             onDismiss = { showTokenEditor = false }
         )
+
+        RootPermissionDialog(
+            show = rootStatus == RootStatus.DENIED,
+            isRetrying = rootStatus == RootStatus.CHECKING,
+            onRetry = onRetryRoot,
+            onOpenManager = onOpenRootManager,
+            onExit = onExitApp
+        )
     }
 }
+
