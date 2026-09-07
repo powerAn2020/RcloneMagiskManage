@@ -2,3 +2,9 @@
 ar = "C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
 linker = "C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe"
 rustflags = ["-C", "link-arg=-target", "-C", "link-arg=x86_64-linux-android34"]
+
+[target.aarch64-linux-android]
+ar = "C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+linker = "C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe"
+rustflags = ["-C", "link-arg=-target", "-C", "link-arg=aarch64-linux-android34"]
+

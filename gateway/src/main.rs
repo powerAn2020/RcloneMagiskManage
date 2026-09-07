@@ -2074,8 +2074,6 @@ async fn pair_complete(
     let id = Uuid::new_v4().to_string();
     let tok = B64.encode(rand::random::<[u8; 32]>());
     let c = db(&s)?;
-    let first_client: bool =
-        c.query_row("SELECT COUNT(*) FROM client", [], |r| r.get::<_, i64>(0))? == 0;
     let token_expires = now() + 30 * 24 * 3600;
     c.execute("INSERT INTO client(id,name,package_name,public_key,token_hash,status,created_at,token_expires_at) VALUES(?,?,?,?,?,'ACTIVE',?,?)",params![id,i.client_name,i.package_name,i.public_key,hash(&tok),now(),token_expires])?;
     // New clients start read-only.  A local administrator can explicitly

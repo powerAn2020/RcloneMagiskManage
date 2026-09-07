@@ -75,4 +75,15 @@ chmod 0755 "$MODPATH"/*.sh 2>/dev/null || true
 # 确保绝不创建 system 目录 (避免任何系统镜像挂载)
 rm -rf "$MODPATH/system"
 
+# 4. 自动安装内置配套应用 (如果模块携带了 app.apk)
+if [ -f "$MODPATH/app.apk" ]; then
+  ui_print "- 正在安装配套管理应用 (app.apk)..."
+  if pm install -r "$MODPATH/app.apk" >/dev/null 2>&1; then
+    ui_print "- 配套管理应用安装成功"
+  else
+    ui_print "⚠️ 配套应用静默安装未完成，可稍后在模块根目录下直接点击 app.apk 安装"
+  fi
+fi
+
 ui_print "✅ 安装完成！模块为纯服务模式运行，无需修改系统分区。"
+

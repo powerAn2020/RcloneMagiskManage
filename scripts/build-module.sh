@@ -17,9 +17,13 @@ esac
 NDK_ROOT=${NDK_ROOT:-C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264}
 LLVM_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/windows-x86_64/bin"
 if [ -x "$LLVM_BIN/clang.exe" ]; then
+  export PATH="$LLVM_BIN:$PATH"
   export CC_x86_64_linux_android=${CC_x86_64_linux_android:-"$LLVM_BIN/clang.exe"}
   export CXX_x86_64_linux_android=${CXX_x86_64_linux_android:-"$LLVM_BIN/clang++.exe"}
   export AR_x86_64_linux_android=${AR_x86_64_linux_android:-"$LLVM_BIN/llvm-ar.exe"}
+  export CC_aarch64_linux_android=${CC_aarch64_linux_android:-"$LLVM_BIN/aarch64-linux-android34-clang.cmd"}
+  export CXX_aarch64_linux_android=${CXX_aarch64_linux_android:-"$LLVM_BIN/aarch64-linux-android34-clang++.cmd"}
+  export AR_aarch64_linux_android=${AR_aarch64_linux_android:-"$LLVM_BIN/llvm-ar.exe"}
 fi
 cargo build --release --target "$TARGET" -p rclone-gateway
 rm -rf "$OUT"
@@ -47,14 +51,23 @@ if [ -d "$ROOT/magisk-module/META-INF" ]; then
   cp -r "$ROOT/magisk-module/META-INF" "$OUT/"
 fi
 
-# 4. Enforce: No system/ directory (No system mount overlay)
+# 4. Integrate Android companion APK (installed via customize.sh)
+APK_SOURCE="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
+if [ -f "$APK_SOURCE" ]; then
+  echo "Integrating companion APK: $APK_SOURCE -> $OUT/app.apk"
+  cp "$APK_SOURCE" "$OUT/app.apk"
+else
+  echo "⚠️ Warning: $APK_SOURCE not found, module will be packaged without app.apk"
+fi
+
+# 5. Enforce: No system/ directory (No system mount overlay)
 rm -rf "$OUT/system"
 
-# 5. Set executable permissions
+# 6. Set executable permissions
 chmod 0755 "$OUT/bin/"* "$OUT/"*.sh
 [ -d "$OUT/META-INF" ] && chmod -R 0755 "$OUT/META-INF"
 
-# 6. Package flashable ZIP for Magisk / KernelSU / APatch
+# 7. Package flashable ZIP for Magisk / KernelSU / APatch
 ZIP_OUT="$ROOT/dist/rclone-manager-$TARGET.zip"
 rm -f "$ZIP_OUT"
 if command -v zip >/dev/null 2>&1; then
@@ -65,5 +78,16 @@ elif command -v powershell.exe >/dev/null 2>&1; then
   powershell.exe -Command "Compress-Archive -Path '$OUT/*' -DestinationPath '$ZIP_OUT' -Force"
 fi
 
+# Also create concise alias ZIP (e.g., rclone-manager-arm64.zip, rclone-manager-x86_64.zip)
+ALIAS_NAME=""
+case "$ABI" in
+  arm64-v8a) ALIAS_NAME="rclone-manager-arm64.zip" ;;
+  x86_64)    ALIAS_NAME="rclone-manager-x86_64.zip" ;;
+esac
+if [ -n "$ALIAS_NAME" ]; then
+  cp "$ZIP_OUT" "$ROOT/dist/$ALIAS_NAME"
+fi
+
 printf 'Module directory: %s\n' "$OUT"
 printf 'Flashable ZIP:    %s\n' "$ZIP_OUT"
+[ -n "$ALIAS_NAME" ] && printf 'Alias ZIP:        %s\n' "$ROOT/dist/$ALIAS_NAME"
