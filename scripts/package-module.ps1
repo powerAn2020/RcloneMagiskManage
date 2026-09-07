@@ -88,13 +88,45 @@ function Build-ForArch($RustTarget, $Abi, $ZipName) {
         Remove-Item -Recurse -Force "$OutDir/system"
     }
 
-    # 6. Package flashable ZIP
+    # 6. Package flashable ZIP (Enforce standard UNIX forward slash '/' for KernelSU / Magisk compatibility)
     $TargetZip = "$Root/dist/rclone-manager-$RustTarget.zip"
     $AliasZip = "$Root/dist/$ZipName"
     if (Test-Path $AliasZip) { Remove-Item -Force $AliasZip }
 
     Write-Host "[*] Packaging flashable zip to $AliasZip..." -ForegroundColor Cyan
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($OutDir, $AliasZip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+    $packedWithPython = $false
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        $pyCode = @"
+import zipfile, os
+src = r'$OutDir'
+out = r'$AliasZip'
+with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk(src):
+        for f in sorted(files):
+            full = os.path.join(root, f)
+            rel = os.path.relpath(full, src).replace('\\', '/')
+            zinfo = zipfile.ZipInfo(rel)
+            zinfo.create_system = 3
+            if f.endswith('.sh') or 'bin' in rel.split('/') or f == 'update-binary':
+                zinfo.external_attr = 0o100755 << 16
+            else:
+                zinfo.external_attr = 0o100644 << 16
+            with open(full, 'rb') as fh:
+                zf.writestr(zinfo, fh.read(), compress_type=zipfile.ZIP_DEFLATED)
+"@
+        python -c $pyCode
+        if ($LASTEXITCODE -eq 0) { $packedWithPython = $true }
+    }
+
+    if (-not $packedWithPython) {
+        $zipArchive = [System.IO.Compression.ZipFile]::Open($AliasZip, [System.IO.Compression.ZipArchiveMode]::Create)
+        Get-ChildItem -Path $OutDir -Recurse -File | ForEach-Object {
+            $relPath = $_.FullName.Substring($OutDir.Length + 1).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zipArchive, $_.FullName, $relPath) | Out-Null
+        }
+        $zipArchive.Dispose()
+    }
+
     try {
         if (Test-Path $TargetZip) { Remove-Item -Force $TargetZip -ErrorAction SilentlyContinue }
         Copy-Item $AliasZip $TargetZip -Force -ErrorAction SilentlyContinue
