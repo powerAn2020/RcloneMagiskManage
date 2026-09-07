@@ -303,8 +303,13 @@ pub fn request_cli(args: &[String]) -> Result<()> {
     let auth = token
         .map(|v| format!("Authorization: Bearer {v}\r\n"))
         .unwrap_or_default();
+    let content_type = if !body.is_empty() {
+        "Content-Type: application/json\r\n"
+    } else {
+        ""
+    };
     let head = format!(
-        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{auth}{content_type}Content-Length: {}\r\n\r\n",
         body.len()
     );
     stream.write_all(head.as_bytes())?;

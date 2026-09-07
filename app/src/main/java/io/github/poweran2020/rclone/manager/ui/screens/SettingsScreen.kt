@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
@@ -85,6 +86,8 @@ fun SettingsScreen(
     var auditLogs by remember { mutableStateOf<List<AuditLogItem>>(emptyList()) }
 
     var showAuditDialog by remember { mutableStateOf(false) }
+    var showClearLogsDialog by remember { mutableStateOf(false) }
+    var isClearingLogs by remember { mutableStateOf(false) }
     var showSafeModeWarning by remember { mutableStateOf(false) }
 
     // Editable settings
@@ -277,34 +280,51 @@ fun SettingsScreen(
         }
 
         item {
-            SectionTitle(text = "安全审计日志")
+            SectionTitle(text = "日志管理与安全审计")
         }
 
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Root 操作与安全审计", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text("全链路操作事件已记录，敏感文件名经由 SHA-256 哈希脱敏。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                client.auditLogs(bearer).fold(
-                                    onSuccess = {
-                                        auditLogs = parseAuditLogs(it)
-                                        showAuditDialog = true
-                                    },
-                                    onFailure = { onShowMessage("获取审计日志失败: ${it.message}") }
-                                )
-                            }
-                        }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("查看日志")
+                        Column(Modifier.weight(1f)) {
+                            Text("Root 操作与安全审计", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text("全链路操作事件已记录，敏感文件名经由 SHA-256 哈希脱敏。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    client.auditLogs(bearer).fold(
+                                        onSuccess = {
+                                            auditLogs = parseAuditLogs(it)
+                                            showAuditDialog = true
+                                        },
+                                        onFailure = { onShowMessage("获取审计日志失败: ${it.message}") }
+                                    )
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("查看日志")
+                        }
+                        Button(
+                            onClick = { showClearLogsDialog = true },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("清理日志")
+                        }
                     }
                 }
             }
@@ -379,6 +399,63 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showAuditDialog = false }) { Text("关闭") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAuditDialog = false
+                        showClearLogsDialog = true
+                    }
+                ) {
+                    Text("清理日志", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        )
+    }
+
+    if (showClearLogsDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isClearingLogs) showClearLogsDialog = false },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("确认清理所有日志？", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("此操作将截断清空网关运行日志（gateway.log、job-*.log 等）并清空历史安全审计事件记录，释放存储空间。该操作不可撤销。")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isClearingLogs = true
+                        scope.launch {
+                            client.clearLogs(bearer).fold(
+                                onSuccess = { res ->
+                                    isClearingLogs = false
+                                    showClearLogsDialog = false
+                                    val obj = runCatching { JSONObject(res) }.getOrNull()
+                                    val files = obj?.optInt("filesCleared", 0) ?: 0
+                                    val audit = obj?.optInt("auditRecordsCleared", 0) ?: 0
+                                    auditLogs = emptyList()
+                                    onShowMessage("日志清理完成：已清理 $files 个日志文件，清除 $audit 条审计记录")
+                                },
+                                onFailure = { err ->
+                                    isClearingLogs = false
+                                    onShowMessage("清理日志失败: ${err.message}")
+                                }
+                            )
+                        }
+                    },
+                    enabled = !isClearingLogs,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(if (isClearingLogs) "正在清理…" else "确认清理")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showClearLogsDialog = false },
+                    enabled = !isClearingLogs
+                ) {
+                    Text("取消")
+                }
             }
         )
     }

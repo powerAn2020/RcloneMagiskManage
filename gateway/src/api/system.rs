@@ -343,3 +343,57 @@ pub async fn info(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Info>>
         mtls_required,
     }))
 }
+
+pub async fn logs_clear(
+    State(s): State<AppState>,
+    h: HeaderMap,
+) -> Result<Json<serde_json::Value>> {
+    let client = scope(&h, &s, "security.write")?;
+    let dir = s.root.join("logs");
+    let mut files_cleared = 0;
+    let mut bytes_freed: u64 = 0;
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .and_then(|x| x.to_str())
+                .unwrap_or_default();
+            let is_log = path.extension().and_then(|x| x.to_str()) == Some("log")
+                || name.contains(".log");
+            if is_log {
+                if let Ok(meta) = fs::metadata(&path) {
+                    bytes_freed = bytes_freed.saturating_add(meta.len());
+                }
+                if name == "gateway.log" {
+                    let _ = fs::OpenOptions::new()
+                        .write(true)
+                        .truncate(true)
+                        .open(&path);
+                } else {
+                    let _ = fs::remove_file(&path);
+                }
+                files_cleared += 1;
+            }
+        }
+    }
+    let audit_cleared = {
+        let conn = db(&s)?;
+        conn.execute("DELETE FROM audit_log", [])?
+    };
+    audit(
+        &s,
+        Some(&client),
+        "system.logs.clear",
+        None,
+        None,
+        "SUCCESS",
+        None,
+    )?;
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "filesCleared": files_cleared,
+        "bytesFreed": bytes_freed,
+        "auditRecordsCleared": audit_cleared
+    })))
+}

@@ -19,6 +19,8 @@ data class RemoteItem(
     val endpoint: String,
     val enabled: Boolean,
     val secretRef: String? = null,
+    val options: Map<String, String> = emptyMap(),
+    val configuredSecrets: List<String> = emptyList(),
 )
 
 typealias RemoteSummary = RemoteItem
@@ -38,6 +40,30 @@ fun parseRemotes(raw: String): List<RemoteItem> = runCatching {
             val item = array.optJSONObject(i) ?: continue
             val endpoint = listOf(item.optNullableString("endpoint"), item.optNullableString("path"))
                 .firstOrNull { !it.isNullOrBlank() } ?: ""
+            val optionsMap = buildMap<String, String> {
+                val optObj = item.optJSONObject("options")
+                if (optObj != null) {
+                    val keys = optObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        val v = optObj.opt(k)
+                        if (v != null && !optObj.isNull(k)) {
+                            put(k, v.toString())
+                        }
+                    }
+                }
+            }
+            val configuredSecretsList = buildList<String> {
+                val secArr = item.optJSONArray("configuredSecrets")
+                if (secArr != null) {
+                    for (j in 0 until secArr.length()) {
+                        val sec = secArr.optString(j)
+                        if (!sec.isNullOrBlank()) {
+                            add(sec)
+                        }
+                    }
+                }
+            }
             add(
                 RemoteItem(
                     id = item.optString("id", item.optString("name")),
@@ -46,11 +72,98 @@ fun parseRemotes(raw: String): List<RemoteItem> = runCatching {
                     endpoint = endpoint,
                     enabled = item.optBoolean("enabled", true),
                     secretRef = item.optNullableString("secretRef"),
+                    options = optionsMap,
+                    configuredSecrets = configuredSecretsList,
                 )
             )
         }
     }
 }.getOrDefault(emptyList())
+
+fun parseRemote(raw: String): RemoteItem? = runCatching {
+    val item = JSONObject(raw.trim())
+    val endpoint = listOf(item.optNullableString("endpoint"), item.optNullableString("path"))
+        .firstOrNull { !it.isNullOrBlank() } ?: ""
+    val optionsMap = buildMap<String, String> {
+        val optObj = item.optJSONObject("options")
+        if (optObj != null) {
+            val keys = optObj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val v = optObj.opt(k)
+                if (v != null && !optObj.isNull(k)) {
+                    put(k, v.toString())
+                }
+            }
+        }
+    }
+    val configuredSecretsList = buildList<String> {
+        val secArr = item.optJSONArray("configuredSecrets")
+        if (secArr != null) {
+            for (j in 0 until secArr.length()) {
+                val sec = secArr.optString(j)
+                if (!sec.isNullOrBlank()) {
+                    add(sec)
+                }
+            }
+        }
+    }
+    RemoteItem(
+        id = item.optString("id", item.optString("name")),
+        name = item.optString("name", "未命名"),
+        type = item.optString("type", "unknown"),
+        endpoint = endpoint,
+        enabled = item.optBoolean("enabled", true),
+        secretRef = item.optNullableString("secretRef"),
+        options = optionsMap,
+        configuredSecrets = configuredSecretsList,
+    )
+}.getOrNull()
+
+data class RemoteExportData(
+    val name: String,
+    val type: String,
+    val endpoint: String? = null,
+    val basePath: String = "/",
+    val enabled: Boolean = true,
+    val ini: String,
+    val redactedIni: String,
+    val jsonConfig: String,
+    val redactedJsonConfig: String,
+)
+
+fun parseRemoteExport(raw: String): RemoteExportData = runCatching {
+    val obj = JSONObject(raw.trim())
+    val name = obj.optString("name", "remote")
+    val type = obj.optString("type", "unknown")
+    val endpoint = obj.optNullableString("endpoint")
+    val basePath = obj.optString("basePath", "/")
+    val enabled = obj.optBoolean("enabled", true)
+    val ini = obj.optString("ini", "")
+    val redactedIni = obj.optString("redactedIni", ini)
+    val jsonConfig = obj.optJSONObject("json")?.toString(2) ?: "{}"
+    val redactedJsonConfig = obj.optJSONObject("redactedJson")?.toString(2) ?: "{}"
+    RemoteExportData(
+        name = name,
+        type = type,
+        endpoint = endpoint,
+        basePath = basePath,
+        enabled = enabled,
+        ini = ini,
+        redactedIni = redactedIni,
+        jsonConfig = jsonConfig,
+        redactedJsonConfig = redactedJsonConfig,
+    )
+}.getOrElse {
+    RemoteExportData(
+        name = "remote",
+        type = "unknown",
+        ini = raw,
+        redactedIni = raw,
+        jsonConfig = raw,
+        redactedJsonConfig = raw,
+    )
+}
 
 data class FileItem(
     val name: String,
@@ -472,4 +585,83 @@ data class LocalFileItem(
     val size: Long = 0L,
     val lastModified: Long = 0L
 )
+
+data class ProviderExample(
+    val value: String,
+    val help: String
+)
+
+data class ProviderOption(
+    val name: String,
+    val help: String,
+    val type: String,
+    val required: Boolean,
+    val advanced: Boolean,
+    val isPassword: Boolean,
+    val defaultVal: String?,
+    val examples: List<ProviderExample>
+)
+
+data class ProviderItem(
+    val name: String,
+    val description: String,
+    val options: List<ProviderOption>
+)
+
+fun parseProviders(raw: String): List<ProviderItem> = runCatching {
+    val array = JSONArray(raw.trim())
+    buildList {
+        for (i in 0 until array.length()) {
+            val pObj = array.optJSONObject(i) ?: continue
+            val name = pObj.optString("Name")
+            val desc = pObj.optString("Description")
+            val optArray = pObj.optJSONArray("Options") ?: JSONArray()
+            val options = buildList {
+                for (j in 0 until optArray.length()) {
+                    val oObj = optArray.optJSONObject(j) ?: continue
+                    val exArray = oObj.optJSONArray("Examples")
+                    val examples = buildList {
+                        if (exArray != null) {
+                            for (k in 0 until exArray.length()) {
+                                val eObj = exArray.optJSONObject(k) ?: continue
+                                add(
+                                    ProviderExample(
+                                        value = eObj.optString("Value"),
+                                        help = eObj.optString("Help")
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    val optName = oObj.optString("Name")
+                    val isPass = oObj.optBoolean("IsPassword", false)
+                        || optName.equals("pass", ignoreCase = true)
+                        || optName.equals("password", ignoreCase = true)
+                        || optName.contains("password", ignoreCase = true)
+                        || optName.contains("secret", ignoreCase = true)
+                        || optName.contains("token", ignoreCase = true)
+                    add(
+                        ProviderOption(
+                            name = optName,
+                            help = oObj.optString("Help"),
+                            type = oObj.optString("Type", "string"),
+                            required = oObj.optBoolean("Required", false),
+                            advanced = oObj.optBoolean("Advanced", false),
+                            isPassword = isPass,
+                            defaultVal = oObj.optNullableString("DefaultStr")?.takeIf { it.isNotBlank() && it != "[]" && it != "{}" }
+                                ?: run {
+                                    val raw = oObj.opt("Default")
+                                    if (raw is String || raw is Number || raw is Boolean) {
+                                        raw.toString().trim().takeIf { it.isNotBlank() && it != "[]" && it != "{}" }
+                                    } else null
+                                },
+                            examples = examples
+                        )
+                    )
+                }
+            }
+            add(ProviderItem(name = name, description = desc, options = options))
+        }
+    }
+}.getOrDefault(emptyList())
 

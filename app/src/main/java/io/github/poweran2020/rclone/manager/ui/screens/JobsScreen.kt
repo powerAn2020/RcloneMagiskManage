@@ -73,15 +73,18 @@ import java.util.Locale
 import io.github.poweran2020.rclone.manager.GatewayClient
 import io.github.poweran2020.rclone.manager.data.model.JobItem
 import io.github.poweran2020.rclone.manager.data.model.JobRunItem
+import io.github.poweran2020.rclone.manager.data.model.RemoteItem
 import io.github.poweran2020.rclone.manager.data.model.formatBytes
 import io.github.poweran2020.rclone.manager.data.model.formatEpochTime
 import io.github.poweran2020.rclone.manager.data.model.parseJobRuns
 import io.github.poweran2020.rclone.manager.data.model.parseJobs
+import io.github.poweran2020.rclone.manager.data.model.parseRemotes
 import io.github.poweran2020.rclone.manager.ui.component.ContentCard
 import io.github.poweran2020.rclone.manager.ui.component.EmptyView
 import io.github.poweran2020.rclone.manager.ui.component.InfoRow
 import io.github.poweran2020.rclone.manager.ui.component.LoadingView
 import io.github.poweran2020.rclone.manager.ui.component.MaterialTextField
+import io.github.poweran2020.rclone.manager.ui.component.RclonePathPickerField
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
 import io.github.poweran2020.rclone.manager.ui.component.DangerousConfirmDialog
@@ -100,6 +103,7 @@ fun JobsScreen(
     val scope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(true) }
     var jobs by remember { mutableStateOf<List<JobItem>>(emptyList()) }
+    var remotes by remember { mutableStateOf<List<RemoteItem>>(emptyList()) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedRunsJob by remember { mutableStateOf<JobItem?>(null) }
     var jobRunsList by remember { mutableStateOf<List<JobRunItem>>(emptyList()) }
@@ -118,8 +122,18 @@ fun JobsScreen(
         }
     }
 
+    val loadRemotes = {
+        scope.launch {
+            client.remotes(bearer).fold(
+                onSuccess = { remotes = parseRemotes(it) },
+                onFailure = {}
+            )
+        }
+    }
+
     LaunchedEffect(bearer) {
         loadJobs()
+        loadRemotes()
     }
 
     LazyColumn(
@@ -146,7 +160,10 @@ fun JobsScreen(
                         Text("刷新")
                     }
                     Button(
-                        onClick = { showCreateDialog = true },
+                        onClick = {
+                            loadRemotes()
+                            showCreateDialog = true
+                        },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
@@ -394,6 +411,9 @@ fun JobsScreen(
     // Dialog: Create Job
     if (showCreateDialog) {
         CreateJobDialog(
+            remotes = remotes,
+            client = client,
+            bearer = bearer,
             onDismiss = { showCreateDialog = false },
             onSubmit = { type, src, dest, schedule, netPolicy, batPolicy, dryRun, options ->
                 scope.launch {
@@ -783,16 +803,33 @@ fun JobsScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateJobDialog(
+    remotes: List<RemoteItem>,
+    client: GatewayClient,
+    bearer: String,
     onDismiss: () -> Unit,
     onSubmit: (type: String, src: String, dest: String, schedule: String?, net: String?, bat: String?, dryRun: Boolean, options: JSONObject?) -> Unit
 ) {
     var type by remember { mutableStateOf("copy") }
     var source by remember { mutableStateOf(TextFieldValue("")) }
     var destination by remember { mutableStateOf(TextFieldValue("")) }
-    var schedule by remember { mutableStateOf(TextFieldValue("")) }
     var networkPolicy by remember { mutableStateOf("ANY") }
     var batteryPolicy by remember { mutableStateOf("ANY") }
     var dryRun by remember { mutableStateOf(false) }
+
+    // Schedule presets
+    val schedulePresets = listOf(
+        Pair("不自动调度 (仅手动执行)", null),
+        Pair("开机时执行一次 (@reboot)", "@reboot"),
+        Pair("每 5 分钟 (*/5 * * * *)", "*/5 * * * *"),
+        Pair("每 15 分钟 (*/15 * * * *)", "*/15 * * * *"),
+        Pair("每 30 分钟 (*/30 * * * *)", "*/30 * * * *"),
+        Pair("每小时执行一次 (@hourly)", "@hourly"),
+        Pair("每天执行一次 (@daily)", "@daily"),
+        Pair("自定义表达式...", "CUSTOM")
+    )
+    var selectedScheduleIndex by remember { mutableStateOf(0) }
+    var customScheduleText by remember { mutableStateOf(TextFieldValue("")) }
+    var scheduleDropdownExpanded by remember { mutableStateOf(false) }
 
     // Advanced options
     var transfers by remember { mutableStateOf(TextFieldValue("4")) }
@@ -851,13 +888,67 @@ fun CreateJobDialog(
                     }
                 }
 
-                MaterialTextField(value = source, onValueChange = { source = it }, label = "源路径 (例如: remote:path 或 /sdcard/...)")
+                RclonePathPickerField(
+                    label = "源路径",
+                    value = source,
+                    onValueChange = { source = it },
+                    remotes = remotes,
+                    client = client,
+                    bearer = bearer,
+                    placeholder = "例如: remote:path 或 /sdcard/..."
+                )
 
                 if (type != "delete") {
-                    MaterialTextField(value = destination, onValueChange = { destination = it }, label = "目标路径 (例如: remote:path 或 /sdcard/...)")
+                    RclonePathPickerField(
+                        label = "目标路径",
+                        value = destination,
+                        onValueChange = { destination = it },
+                        remotes = remotes,
+                        client = client,
+                        bearer = bearer,
+                        placeholder = "例如: remote:path 或 /sdcard/..."
+                    )
                 }
 
-                MaterialTextField(value = schedule, onValueChange = { schedule = it }, label = "计划调度 (@hourly/@daily/@reboot, 可选)")
+                // Schedule Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = scheduleDropdownExpanded,
+                    onExpandedChange = { scheduleDropdownExpanded = !scheduleDropdownExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = schedulePresets[selectedScheduleIndex].first,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("计划调度") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = scheduleDropdownExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = scheduleDropdownExpanded,
+                        onDismissRequest = { scheduleDropdownExpanded = false }
+                    ) {
+                        schedulePresets.forEachIndexed { index, item ->
+                            DropdownMenuItem(
+                                text = { Text(item.first) },
+                                onClick = {
+                                    selectedScheduleIndex = index
+                                    scheduleDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (schedulePresets[selectedScheduleIndex].second == "CUSTOM") {
+                    MaterialTextField(
+                        value = customScheduleText,
+                        onValueChange = { customScheduleText = it },
+                        label = "自定义调度表达式 (例如: @every 30s 或 */10 * * * *)"
+                    )
+                }
 
                 // Network policy
                 ExposedDropdownMenuBox(
@@ -975,11 +1066,17 @@ fun CreateJobDialog(
                         if (type == "sync" && deleteExcluded) put("deleteExcluded", true)
                     }.takeIf { it.length() > 0 }
 
+                    val finalSchedule = if (schedulePresets[selectedScheduleIndex].second == "CUSTOM") {
+                        customScheduleText.text.trim().ifBlank { null }
+                    } else {
+                        schedulePresets[selectedScheduleIndex].second
+                    }
+
                     onSubmit(
                         type,
                         src,
                         dest,
-                        schedule.text.trim().ifBlank { null },
+                        finalSchedule,
                         networkPolicy,
                         batteryPolicy,
                         dryRun,

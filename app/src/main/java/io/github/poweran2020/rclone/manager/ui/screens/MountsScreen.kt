@@ -17,6 +17,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
@@ -28,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -52,10 +57,12 @@ import io.github.poweran2020.rclone.manager.data.model.RemoteItem
 import io.github.poweran2020.rclone.manager.data.model.parseMounts
 import io.github.poweran2020.rclone.manager.data.model.parseRemotes
 import io.github.poweran2020.rclone.manager.ui.component.ContentCard
+import io.github.poweran2020.rclone.manager.ui.component.DangerousConfirmDialog
 import io.github.poweran2020.rclone.manager.ui.component.EmptyView
 import io.github.poweran2020.rclone.manager.ui.component.InfoRow
 import io.github.poweran2020.rclone.manager.ui.component.LoadingView
 import io.github.poweran2020.rclone.manager.ui.component.MaterialTextField
+import io.github.poweran2020.rclone.manager.ui.component.PathPickerDialog
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
 import kotlinx.coroutines.launch
@@ -73,6 +80,9 @@ fun MountsScreen(
     var mounts by remember { mutableStateOf<List<MountProfileItem>>(emptyList()) }
     var remotes by remember { mutableStateOf<List<RemoteItem>>(emptyList()) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var mountToEdit by remember { mutableStateOf<MountProfileItem?>(null) }
+    var mountToDelete by remember { mutableStateOf<MountProfileItem?>(null) }
+    var isDeleting by remember { mutableStateOf(false) }
 
     val loadMounts = {
         scope.launch {
@@ -132,7 +142,7 @@ fun MountsScreen(
                 EmptyView(
                     icon = Icons.Default.Storage,
                     title = "暂无挂载 Profile",
-                    message = "点击“创建挂载”将云存储挂载到 Android 文件系统 (/mnt/rclone-*)。"
+                    message = "点击“创建挂载”将云存储挂载到 Android 文件系统 (/mnt/rclone-* 或自定义路径)。"
                 )
             }
         } else {
@@ -143,7 +153,7 @@ fun MountsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(mount.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text(
                                 "挂载点: ${mount.mountPoint}",
@@ -192,9 +202,11 @@ fun MountsScreen(
                     Spacer(Modifier.height(6.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (mount.status.uppercase() != "RUNNING") {
+                        val isRunning = mount.status.uppercase() == "RUNNING"
+                        if (!isRunning) {
                             Button(
                                 modifier = Modifier.weight(1f),
                                 onClick = {
@@ -227,6 +239,30 @@ fun MountsScreen(
                                 Text("停止挂载")
                             }
                         }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (isRunning || mount.status.uppercase() == "STARTING") {
+                                    onShowMessage("挂载正在运行中，请先停止挂载后再进行编辑修改")
+                                } else {
+                                    mountToEdit = mount
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("编辑")
+                        }
+
+                        IconButton(
+                            onClick = { mountToDelete = mount }
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "删除挂载",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }
@@ -234,8 +270,12 @@ fun MountsScreen(
     }
 
     if (showCreateDialog) {
-        CreateMountDialog(
+        MountEditDialog(
+            title = "创建挂载 Profile",
+            initialMount = null,
             remotes = remotes,
+            client = client,
+            bearer = bearer,
             onDismiss = { showCreateDialog = false },
             onSubmit = { name, remoteId, remotePath, mountPoint, readOnly, mode, size, age ->
                 scope.launch {
@@ -251,32 +291,106 @@ fun MountsScreen(
             }
         )
     }
+
+    mountToEdit?.let { editTarget ->
+        MountEditDialog(
+            title = "编辑挂载 Profile: ${editTarget.name}",
+            initialMount = editTarget,
+            remotes = remotes,
+            client = client,
+            bearer = bearer,
+            onDismiss = { mountToEdit = null },
+            onSubmit = { name, remoteId, remotePath, mountPoint, readOnly, mode, size, age ->
+                scope.launch {
+                    client.updateMount(
+                        id = editTarget.id,
+                        name = name,
+                        remoteId = remoteId,
+                        mountPoint = mountPoint,
+                        token = bearer,
+                        remotePath = remotePath,
+                        cacheDir = editTarget.cacheDir,
+                        readOnly = readOnly,
+                        cacheMode = mode,
+                        cacheMaxSize = size,
+                        cacheMaxAge = age
+                    ).fold(
+                        onSuccess = {
+                            onShowMessage("挂载配置已成功更新")
+                            mountToEdit = null
+                            loadMounts()
+                        },
+                        onFailure = { onShowMessage("更新挂载失败: ${it.message}") }
+                    )
+                }
+            }
+        )
+    }
+
+    mountToDelete?.let { delTarget ->
+        DangerousConfirmDialog(
+            show = true,
+            title = "删除挂载: ${delTarget.name}",
+            message = "确定要删除此挂载 Profile 吗？" +
+                    (if (delTarget.status.uppercase() == "RUNNING") "\n当前挂载正在运行，删除将先强制停止后台 Worker 进程并卸载挂载点。" else "") +
+                    "\n删除后配置无法撤销。",
+            confirmLabel = "确认删除",
+            isLoading = isDeleting,
+            onConfirm = {
+                scope.launch {
+                    isDeleting = true
+                    client.deleteMount(delTarget.id, bearer).fold(
+                        onSuccess = {
+                            isDeleting = false
+                            onShowMessage("挂载配置已成功删除")
+                            mountToDelete = null
+                            loadMounts()
+                        },
+                        onFailure = {
+                            isDeleting = false
+                            onShowMessage("删除挂载失败: ${it.message}")
+                        }
+                    )
+                }
+            },
+            onDismiss = {
+                if (!isDeleting) mountToDelete = null
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateMountDialog(
+fun MountEditDialog(
+    title: String,
+    initialMount: MountProfileItem?,
     remotes: List<RemoteItem>,
+    client: GatewayClient,
+    bearer: String,
     onDismiss: () -> Unit,
     onSubmit: (name: String, remoteId: String, remotePath: String, mountPoint: String, readOnly: Boolean, mode: String, size: String, age: String) -> Unit
 ) {
-    var name by remember { mutableStateOf(TextFieldValue("")) }
-    var selectedRemoteId by remember { mutableStateOf(remotes.firstOrNull()?.id ?: "") }
-    var remotePath by remember { mutableStateOf(TextFieldValue("/")) }
-    var mountPoint by remember { mutableStateOf(TextFieldValue("")) }
-    var isCustomMountPoint by remember { mutableStateOf(false) }
-    var cacheMode by remember { mutableStateOf("full") }
-    var cacheMaxSize by remember { mutableStateOf(TextFieldValue("32G")) }
-    var cacheMaxAge by remember { mutableStateOf(TextFieldValue("36h")) }
-    var readOnly by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf(TextFieldValue(initialMount?.name ?: "")) }
+    var selectedRemoteId by remember { mutableStateOf(initialMount?.remoteId ?: (remotes.firstOrNull()?.id ?: "")) }
+    var remotePath by remember { mutableStateOf(TextFieldValue(initialMount?.remotePath ?: "/")) }
+    var mountPoint by remember { mutableStateOf(TextFieldValue(initialMount?.mountPoint ?: "")) }
+    var isCustomMountPoint by remember { mutableStateOf(initialMount != null) }
+    var cacheMode by remember { mutableStateOf(initialMount?.cacheMode ?: "full") }
+    var cacheMaxSize by remember { mutableStateOf(TextFieldValue(initialMount?.cacheMaxSize ?: "32G")) }
+    var cacheMaxAge by remember { mutableStateOf(TextFieldValue(initialMount?.cacheMaxAge ?: "36h")) }
+    var readOnly by remember { mutableStateOf(initialMount?.readOnly ?: false) }
 
     var remoteDropdownExpanded by remember { mutableStateOf(false) }
     var modeDropdownExpanded by remember { mutableStateOf(false) }
     val cacheModes = listOf("full", "writes", "minimal", "off")
 
+    var showRemotePathPicker by remember { mutableStateOf(false) }
+    var showLocalMountPicker by remember { mutableStateOf(false) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("创建挂载 Profile", fontWeight = FontWeight.Bold) },
+        title = { Text(title, fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier
@@ -288,7 +402,7 @@ fun CreateMountDialog(
                     value = name,
                     onValueChange = {
                         name = it
-                        if (!isCustomMountPoint) {
+                        if (!isCustomMountPoint && initialMount == null) {
                             val trimmed = it.text.trim()
                             mountPoint = TextFieldValue(if (trimmed.isNotBlank()) "/mnt/rclone-$trimmed" else "")
                         }
@@ -329,15 +443,43 @@ fun CreateMountDialog(
                     }
                 }
 
-                MaterialTextField(value = remotePath, onValueChange = { remotePath = it }, label = "远端子路径 (默认 /)")
+                // Remote subpath with Picker
+                OutlinedTextField(
+                    value = remotePath,
+                    onValueChange = { remotePath = it },
+                    label = { Text("远端子路径 (默认 /)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(onClick = { showRemotePathPicker = true }) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = "浏览选择远端目录",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                )
 
-                MaterialTextField(
+                // Mount point with Picker
+                OutlinedTextField(
                     value = mountPoint,
                     onValueChange = {
                         mountPoint = it
                         isCustomMountPoint = true
                     },
-                    label = "挂载点路径 (Mount Point)"
+                    label = { Text("挂载点路径 (Mount Point)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(onClick = { showLocalMountPicker = true }) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = "浏览选择本地挂载目录",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
                 )
 
                 Text("常用挂载点预设:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -454,4 +596,41 @@ fun CreateMountDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
+
+    if (showRemotePathPicker) {
+        val selectedRemote = remotes.find { it.id == selectedRemoteId }
+        val rName = selectedRemote?.name ?: ""
+        val initialP = if (rName.isNotBlank()) "$rName:${remotePath.text.trim()}" else remotePath.text.trim()
+        PathPickerDialog(
+            title = "选择远端子路径 (${rName.ifBlank { "远端" }})",
+            initialPath = initialP,
+            remotes = remotes,
+            client = client,
+            bearer = bearer,
+            onDismiss = { showRemotePathPicker = false },
+            onConfirm = { chosen ->
+                val sub = if (chosen.contains(":")) chosen.substringAfter(":") else chosen
+                val normalized = if (sub.isBlank()) "/" else if (sub.startsWith("/")) sub else "/$sub"
+                remotePath = TextFieldValue(normalized)
+                showRemotePathPicker = false
+            }
+        )
+    }
+
+    if (showLocalMountPicker) {
+        PathPickerDialog(
+            title = "选择本地挂载目录",
+            initialPath = mountPoint.text.ifBlank { "/storage/emulated/0" },
+            remotes = remotes,
+            client = client,
+            bearer = bearer,
+            onDismiss = { showLocalMountPicker = false },
+            onConfirm = { chosen ->
+                val localP = if (chosen.contains(":")) chosen.substringAfter(":") else chosen
+                mountPoint = TextFieldValue(localP)
+                isCustomMountPoint = true
+                showLocalMountPicker = false
+            }
+        )
+    }
 }

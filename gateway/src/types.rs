@@ -92,12 +92,22 @@ pub struct Remote {
     pub endpoint: Option<String>,
     pub enabled: bool,
     pub secret_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub configured_secrets: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteDeleteIn {
     pub confirmation_token: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteImportIn {
+    pub config: String,
 }
 
 #[derive(Deserialize)]

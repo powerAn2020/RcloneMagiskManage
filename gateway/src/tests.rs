@@ -15,6 +15,7 @@ use crate::db::*;
 use crate::engine::*;
 use crate::security::*;
 use crate::state::*;
+use crate::types::*;
 
     #[test]
     fn path_guard_rejects_traversal_and_prefix_escape() {
@@ -122,6 +123,18 @@ use crate::state::*;
             "/api/v1/remotes/123e4567-e89b-12d3-a456-426614174000/disable"
         ));
         assert!(allowed_request("POST", "/api/v1/remotes/import"));
+        assert!(allowed_request(
+            "GET",
+            "/api/v1/mounts/123e4567-e89b-12d3-a456-426614174000"
+        ));
+        assert!(allowed_request(
+            "PUT",
+            "/api/v1/mounts/123e4567-e89b-12d3-a456-426614174000"
+        ));
+        assert!(allowed_request(
+            "DELETE",
+            "/api/v1/mounts/123e4567-e89b-12d3-a456-426614174000"
+        ));
     }
     #[test]
     fn lan_paths_require_tls_and_parse_socket_address() {
@@ -244,6 +257,15 @@ use crate::state::*;
             .decode(a.as_bytes())
             .unwrap();
         assert_eq!(decoded.len(), 16 + "password".len());
+        assert_eq!(deobscure_rclone(&a).unwrap(), "password");
+        assert_eq!(deobscure_rclone(&b).unwrap(), "password");
+        assert!(is_rclone_obscured(&a));
+        assert!(!is_rclone_obscured("plain_pw_123"));
+        assert!(is_rclone_password_key("pass"));
+        assert!(is_rclone_password_key("password"));
+        assert!(is_rclone_password_key("key_file_pass"));
+        assert!(!is_rclone_password_key("endpoint"));
+        assert!(!is_rclone_password_key("user"));
     }
     #[test]
     fn crypt_config_materialization_keeps_password_out_of_api_shape() {
@@ -750,4 +772,471 @@ info line"#,
             vec!["<redacted>".to_owned(), "<redacted>".to_owned()]
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn remote_import_parses_ini_and_encrypts_secrets() {
+        let root = std::env::temp_dir().join(format!("rclone-test-import-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+        let token = "test_token_123";
+        let token_h = hash(token);
+        let t = now();
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c1','test',?,'ACTIVE',?)",
+                params![token_h, t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope) VALUES('c1','*')",
+                [],
+            )
+            .unwrap();
+        }
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+        let ini = "[mywebdav]\ntype = webdav\nurl = https://dav.example.com\nuser = alice\npass = secret123\nvendor = other\n";
+        let res = remote_import(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::Json(crate::types::RemoteImportIn {
+                config: ini.to_string(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res.0, axum::http::StatusCode::CREATED);
+        assert_eq!(res.1.len(), 1);
+        assert_eq!(res.1[0].name, "mywebdav");
+        assert_eq!(res.1[0].remote_type, "webdav");
+        assert_eq!(res.1[0].endpoint.as_deref(), Some("https://dav.example.com"));
+
+        let conf_path = materialize_rclone_config(&state, &[res.1[0].id.clone()])
+            .unwrap()
+            .unwrap();
+        let conf_text = fs::read_to_string(&conf_path).unwrap();
+        assert!(conf_text.contains("[mywebdav]"));
+        assert!(conf_text.contains("type = webdav"));
+        assert!(conf_text.contains("user = alice"));
+        let pass_line = conf_text
+            .lines()
+            .find(|l| l.starts_with("pass = "))
+            .expect("must contain pass line");
+        let obs_pass = pass_line.strip_prefix("pass = ").unwrap();
+        assert_eq!(
+            crate::security::crypto::deobscure_rclone(obs_pass).unwrap(),
+            "secret123"
+        );
+        let _ = fs::remove_file(conf_path);
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
+    #[tokio::test]
+    async fn remote_delete_empty_body_returns_confirmation() {
+        let root = std::env::temp_dir().join(format!("rclone-test-del-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+        let token = "test_token_del";
+        let token_h = hash(token);
+        let t = now();
+        let remote_id = Uuid::new_v4().to_string();
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c1','test',?,'ACTIVE',?)",
+                params![token_h, t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c1','remote.delete','*',NULL)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO remote(id,name,type,endpoint,base_path,enabled,created_at,updated_at) VALUES(?,'testdel','webdav','https://dav.example.com','/',1,100,100)",
+                params![remote_id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO remote_acl(client_id,remote_id,permissions,allowed_prefix) VALUES('c1',?,'*','/')",
+                params![remote_id],
+            )
+            .unwrap();
+        }
+
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        // Empty body DELETE should return 202 ACCEPTED with confirmationToken
+        let res = remote_delete(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(remote_id.clone()),
+            axum::body::Bytes::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res.status(), axum::http::StatusCode::ACCEPTED);
+
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
+    #[tokio::test]
+    async fn system_logs_clear_clears_files_and_audit() {
+        assert!(allowed_request("POST", "/api/v1/system/logs/clear"));
+        let root = std::env::temp_dir().join(format!("rclone-test-clear-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+        let logs_dir = state.root.join("logs");
+        fs::create_dir_all(&logs_dir).unwrap();
+        fs::write(logs_dir.join("gateway.log"), "sample gateway log").unwrap();
+        fs::write(logs_dir.join("job-1.log"), "sample job log").unwrap();
+        fs::write(logs_dir.join("old.log.1"), "rotated log").unwrap();
+        fs::write(logs_dir.join("other.txt"), "keep this").unwrap();
+
+        let token = "test_clear_token";
+        let token_h = hash(token);
+        let t = now();
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c_clear','test',?,'ACTIVE',?)",
+                params![token_h, t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c_clear','security.write','*',NULL)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO audit_log(timestamp,client_id,operation,result) VALUES(100,'c_clear','old.op','SUCCESS')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        let res = logs_clear(axum::extract::State(state.clone()), h).await.unwrap();
+        let val = res.0;
+        assert_eq!(val["status"], "ok");
+        assert_eq!(val["filesCleared"], 3);
+        assert_eq!(val["auditRecordsCleared"], 1);
+
+        // gateway.log should be truncated to 0
+        assert_eq!(fs::metadata(logs_dir.join("gateway.log")).unwrap().len(), 0);
+        // job-1.log and old.log.1 should be deleted
+        assert!(!logs_dir.join("job-1.log").exists());
+        assert!(!logs_dir.join("old.log.1").exists());
+        // non-log file should be kept
+        assert!(logs_dir.join("other.txt").exists());
+
+        // audit_log should now contain only the clear operation
+        let conn = state.db.lock().unwrap();
+        let ops: Vec<String> = conn
+            .prepare("SELECT operation FROM audit_log")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(ops, vec!["system.logs.clear".to_string()]);
+
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
+    #[tokio::test]
+    async fn remote_get_and_update_retains_password_and_echoes_options() {
+        let root = std::env::temp_dir().join(format!("rclone-test-echo-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+
+        let token = "test_echo_token";
+        let token_h = hash(token);
+        let t = now();
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c_echo','test',?,'ACTIVE',?)",
+                params![token_h, t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c_echo','*','*',NULL)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        // 1. Create remote with user, vendor, pass
+        let secret = serde_json::json!({
+            "user": "testuser",
+            "pass": "secret123",
+            "vendor": "other"
+        });
+        let create_res = remote_create(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Json(RemoteIn {
+                name: "myremote".into(),
+                remote_type: "webdav".into(),
+                endpoint: Some("https://dav.example.com".into()),
+                base_path: None,
+                enabled: Some(true),
+                secret: Some(secret),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let remote_id = create_res.1.id.clone();
+
+        // 2. remote_get should echo options without plaintext pass, but with configured_secrets: ["pass"]
+        let get_res = remote_get(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(remote_id.clone()),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        let opts = get_res.options.unwrap();
+        assert_eq!(opts["user"], "testuser");
+        assert_eq!(opts["vendor"], "other");
+        assert!(opts.get("pass").is_none());
+        assert_eq!(get_res.configured_secrets.unwrap(), vec!["pass".to_string()]);
+
+        // 3. remote_update without pass (only updating user)
+        let update_res = remote_update(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(remote_id.clone()),
+            axum::extract::Json(RemoteIn {
+                name: "myremote".into(),
+                remote_type: "webdav".into(),
+                endpoint: Some("https://dav.example.com".into()),
+                base_path: None,
+                enabled: Some(true),
+                secret: Some(serde_json::json!({
+                    "user": "newuser",
+                    "pass": "" // Empty password should retain old password!
+                })),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        let updated_opts = update_res.options.unwrap();
+        assert_eq!(updated_opts["user"], "newuser");
+        assert!(updated_opts.get("pass").is_none());
+        assert_eq!(update_res.configured_secrets.unwrap(), vec!["pass".to_string()]);
+
+        // 4. Verify that the encrypted secret STILL contains the original pass!
+        let sec_blob = crate::security::crypto::decrypt_secret(
+            &state.root,
+            &update_res.secret_ref.unwrap(),
+            &remote_id,
+        )
+        .unwrap();
+        assert_eq!(sec_blob["user"], "newuser");
+        assert_eq!(sec_blob["pass"], "secret123");
+
+        // 5. Test remote_export with full and redacted INI/JSON
+        let exported = crate::api::remotes::remote_export(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(remote_id.clone()),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        let ini = exported["ini"].as_str().unwrap();
+        let redacted_ini = exported["redactedIni"].as_str().unwrap();
+        let full_json = &exported["json"];
+        let redacted_json = &exported["redactedJson"];
+
+        assert!(ini.contains("[myremote]"));
+        assert!(ini.contains("type = webdav"));
+        assert!(ini.contains("user = newuser"));
+        assert!(ini.contains("url = https://dav.example.com"));
+        assert!(!ini.contains("secret123")); // Must be obscured
+        assert!(ini.contains("pass = "));
+
+        assert!(redacted_ini.contains("pass = ***REDACTED***"));
+        assert!(!redacted_ini.contains("secret123"));
+
+        let obscured_pass = full_json["pass"].as_str().unwrap();
+        let deobscured = crate::security::crypto::deobscure_rclone(obscured_pass).unwrap();
+        assert_eq!(deobscured, "secret123");
+
+        assert_eq!(redacted_json["pass"], "***REDACTED***");
+        assert_eq!(redacted_json["user"], "newuser");
+
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
+    #[tokio::test]
+    async fn mount_lifecycle_get_update_delete() {
+        let root = std::env::temp_dir().join(format!("rclone-mount-test-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+
+        let token = "test_mount_token";
+        let token_h = hash(token);
+        let t = now();
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c_mount','test',?,'ACTIVE',?)",
+                params![token_h, t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c_mount','*','*',NULL)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        // 1. Create remote
+        let remote_res = remote_create(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Json(RemoteIn {
+                name: "mountremote".into(),
+                remote_type: "alias".into(),
+                endpoint: None,
+                base_path: None,
+                enabled: Some(true),
+                secret: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let remote_id = remote_res.1.id.clone();
+
+        // 2. Create mount
+        let mount_res = mount_create(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Json(MountIn {
+                name: "testmount".into(),
+                remote_id: remote_id.clone(),
+                remote_path: Some("/".into()),
+                mount_point: "/mnt/rclone-test".into(),
+                cache_dir: None,
+                read_only: Some(false),
+                cache_mode: Some("writes".into()),
+                cache_max_size: Some("4G".into()),
+                cache_max_age: Some("12h".into()),
+            }),
+        )
+        .await
+        .unwrap()
+        .1
+        .0;
+
+        let mount_id = mount_res.id.clone();
+        assert_eq!(mount_res.name, "testmount");
+        assert_eq!(mount_res.cache_mode, "writes");
+
+        // 3. mount_get
+        let get_res = mount_get(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(mount_id.clone()),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(get_res.id, mount_id);
+        assert_eq!(get_res.name, "testmount");
+        assert_eq!(get_res.mount_point, "/mnt/rclone-test");
+
+        // 4. mount_update
+        let updated = mount_update(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(mount_id.clone()),
+            axum::extract::Json(MountIn {
+                name: "updatedmount".into(),
+                remote_id: remote_id.clone(),
+                remote_path: Some("/subfolder".into()),
+                mount_point: "/mnt/rclone-updated".into(),
+                cache_dir: None,
+                read_only: Some(true),
+                cache_mode: Some("full".into()),
+                cache_max_size: Some("8G".into()),
+                cache_max_age: Some("24h".into()),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(updated.name, "updatedmount");
+        assert_eq!(updated.mount_point, "/mnt/rclone-updated");
+        assert!(updated.read_only);
+        assert_eq!(updated.cache_mode, "full");
+
+        // 5. mount_delete
+        let status = mount_delete(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(mount_id.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status, axum::http::StatusCode::NO_CONTENT);
+
+        // Verify deleted
+        assert!(
+            mount_get(
+                axum::extract::State(state.clone()),
+                h.clone(),
+                axum::extract::Path(mount_id.clone()),
+            )
+            .await
+            .is_err()
+        );
+
+        let _ = fs::remove_dir_all(&state.root);
     }

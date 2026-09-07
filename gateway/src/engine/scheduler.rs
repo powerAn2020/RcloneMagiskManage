@@ -16,8 +16,12 @@ use crate::types::Job;
 pub fn process_kill_command() -> std::process::Command {
     if cfg!(target_os = "android") {
         std::process::Command::new("/system/bin/kill")
-    } else {
+    } else if cfg!(unix) {
         std::process::Command::new("kill")
+    } else {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/c", "exit 0"]);
+        cmd
     }
 }
 

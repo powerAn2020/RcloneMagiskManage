@@ -76,8 +76,12 @@ pub fn derived_bind_target(source: &str) -> Option<String> {
 pub fn umount_command() -> std::process::Command {
     if cfg!(target_os = "android") {
         std::process::Command::new("/system/bin/umount")
-    } else {
+    } else if cfg!(unix) {
         std::process::Command::new("umount")
+    } else {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/c", "exit 0"]);
+        cmd
     }
 }
 

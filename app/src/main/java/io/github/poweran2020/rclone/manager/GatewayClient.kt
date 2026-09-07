@@ -15,12 +15,20 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun setSafeMode(enabled: Boolean, token: String): Result<String> =
         request("PUT", "/api/v1/system/safe-mode", token, JSONObject().put("enabled", enabled))
     suspend fun remotes(token: String): Result<String> = request("GET", "/api/v1/remotes", token)
+    suspend fun remote(id: String, token: String): Result<String> = request("GET", "/api/v1/remotes/${encode(id)}", token)
     suspend fun jobs(token: String): Result<String> = request("GET", "/api/v1/jobs", token)
     suspend fun mounts(token: String): Result<String> = request("GET", "/api/v1/mounts", token)
     suspend fun auditLogs(token: String): Result<String> = request("GET", "/api/v1/logs/audit", token)
+    suspend fun clearLogs(token: String): Result<String> = request("POST", "/api/v1/system/logs/clear", token)
     suspend fun backups(token: String): Result<String> = request("GET", "/api/v1/system/backups", token)
     suspend fun createRemote(name: String, type: String, endpoint: String?, secret: JSONObject?, token: String): Result<String> =
         request("POST", "/api/v1/remotes", token, JSONObject().put("name", name).put("type", type).apply { if (endpoint != null) put("endpoint", endpoint); if (secret != null) put("secret", secret) })
+
+    suspend fun remoteProviders(token: String): Result<String> =
+        request("GET", "/api/v1/remotes/providers", token)
+
+    suspend fun importRemoteConfig(configText: String, token: String): Result<String> =
+        request("POST", "/api/v1/remotes/import", token, JSONObject().put("config", configText))
 
     suspend fun importRemote(name: String, type: String, endpoint: String?, token: String): Result<String> =
         request("POST", "/api/v1/remotes/import", token, JSONObject().put("name", name).put("type", type).apply { if (endpoint != null) put("endpoint", endpoint) })
@@ -99,6 +107,33 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
 
     suspend fun mountAction(id: String, action: String, token: String): Result<String> =
         request("POST", "/api/v1/mounts/${encode(id)}/${requireAction(action, setOf("start", "stop", "enable", "disable"))}", token)
+
+    suspend fun getMount(id: String, token: String): Result<String> =
+        request("GET", "/api/v1/mounts/${encode(id)}", token)
+
+    suspend fun updateMount(
+        id: String,
+        name: String,
+        remoteId: String,
+        mountPoint: String,
+        token: String,
+        remotePath: String? = null,
+        cacheDir: String? = null,
+        readOnly: Boolean = false,
+        cacheMode: String? = null,
+        cacheMaxSize: String? = null,
+        cacheMaxAge: String? = null
+    ): Result<String> =
+        request("PUT", "/api/v1/mounts/${encode(id)}", token, JSONObject().put("name", name).put("remoteId", remoteId).put("mountPoint", mountPoint).put("readOnly", readOnly).apply {
+            if (!remotePath.isNullOrBlank()) put("remotePath", remotePath)
+            if (!cacheDir.isNullOrBlank()) put("cacheDir", cacheDir)
+            if (!cacheMode.isNullOrBlank()) put("cacheMode", cacheMode)
+            if (!cacheMaxSize.isNullOrBlank()) put("cacheMaxSize", cacheMaxSize)
+            if (!cacheMaxAge.isNullOrBlank()) put("cacheMaxAge", cacheMaxAge)
+        })
+
+    suspend fun deleteMount(id: String, token: String): Result<String> =
+        request("DELETE", "/api/v1/mounts/${encode(id)}", token)
 
     /** First call returns a short-lived confirmation token; pass it back to commit deletion. */
     suspend fun remoteDelete(id: String, token: String, confirmationToken: String? = null): Result<String> =
@@ -279,4 +314,87 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         action.trim().also { require(it in allowed) }
 
     private fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    data class LanConfig(
+        val enabled: Boolean,
+        val host: String = "0.0.0.0",
+        val port: Int = 8443,
+        val certPath: String = "/data/adb/rclone-manage/keys/server.pem",
+        val keyPath: String = "/data/adb/rclone-manage/keys/server.key",
+        val rawConf: String = ""
+    )
+
+    suspend fun getLanConfig(): LanConfig = withContext(Dispatchers.IO) {
+        val confFile = "/data/adb/rclone-manage/runtime/lan.conf"
+        val check = Shell.cmd("[ -f '$confFile' ] && cat '$confFile'").exec()
+        if (check.isSuccess && check.out.isNotEmpty()) {
+            val content = check.out.joinToString("\n")
+            var addr = "0.0.0.0:8443"
+            var cert = ""
+            var key = ""
+            check.out.forEach { line ->
+                val parts = line.split('=', limit = 2)
+                if (parts.size == 2) {
+                    when (parts[0].trim()) {
+                        "LAN_ADDR" -> addr = parts[1].trim()
+                        "TLS_CERT" -> cert = parts[1].trim()
+                        "TLS_KEY" -> key = parts[1].trim()
+                    }
+                }
+            }
+            val port = addr.substringAfterLast(':', "8443").toIntOrNull() ?: 8443
+            val host = addr.substringBeforeLast(':', "0.0.0.0")
+            LanConfig(enabled = true, host = host, port = port, certPath = cert, keyPath = key, rawConf = content)
+        } else {
+            LanConfig(enabled = false)
+        }
+    }
+
+    suspend fun updateLanConfig(enabled: Boolean, port: Int = 8443): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val confPath = "/data/adb/rclone-manage/runtime/lan.conf"
+            val keysDir = "/data/adb/rclone-manage/keys"
+            val certPath = "$keysDir/server.pem"
+            val keyPath = "$keysDir/server.key"
+
+            if (enabled) {
+                // Ensure keys exist
+                val checkKeys = Shell.cmd("[ -f '$certPath' ] && [ -f '$keyPath' ]").exec()
+                if (!checkKeys.isSuccess || checkKeys.out.isEmpty()) {
+                    val certPair = io.github.poweran2020.rclone.manager.util.TlsCertUtil.generateSelfSignedCert()
+                    Shell.cmd("mkdir -p '$keysDir' && chmod 700 '$keysDir'").exec()
+                    val writeCertCmd = "cat << 'EOF' > '$certPath'\n${certPair.certPem}\nEOF\nchmod 600 '$certPath'"
+                    val writeKeyCmd = "cat << 'EOF' > '$keyPath'\n${certPair.keyPem}\nEOF\nchmod 600 '$keyPath'"
+                    Shell.cmd(writeCertCmd).exec()
+                    Shell.cmd(writeKeyCmd).exec()
+                }
+                val confContent = "LAN_ADDR=0.0.0.0:$port\nTLS_CERT=$certPath\nTLS_KEY=$keyPath\n"
+                val writeConfCmd = "cat << 'EOF' > '$confPath'\n$confContent\nEOF\nchmod 600 '$confPath'"
+                val writeRes = Shell.cmd(writeConfCmd).exec()
+                check(writeRes.isSuccess) { "写入 lan.conf 失败" }
+                restartGatewayService()
+                "已成功启用 LAN 局域网监听 (端口: $port, TLS已加密)，Gateway 已自动重启生效"
+            } else {
+                Shell.cmd("rm -f '$confPath'").exec()
+                restartGatewayService()
+                "已关闭 LAN 局域网监听，Gateway 已重启生效"
+            }
+        }
+    }
+
+    suspend fun getDeviceIpAddresses(): List<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val ips = mutableListOf<String>()
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return@runCatching emptyList()
+            for (intf in interfaces) {
+                if (intf.isLoopback || !intf.isUp) continue
+                for (addr in intf.inetAddresses) {
+                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                        ips.add(addr.hostAddress)
+                    }
+                }
+            }
+            ips
+        }.getOrDefault(emptyList())
+    }
 }

@@ -3,6 +3,7 @@ package io.github.poweran2020.rclone.manager.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,6 +52,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -104,6 +106,20 @@ fun SecurityScreen(
     var showPairingCompleteDialog by remember { mutableStateOf(false) }
     var showRePairOptions by remember { mutableStateOf(false) }
 
+    // LAN configuration states
+    var lanConfig by remember { mutableStateOf(GatewayClient.LanConfig(enabled = false)) }
+    var deviceIps by remember { mutableStateOf<List<String>>(emptyList()) }
+    var lanPortInput by remember { mutableStateOf("8443") }
+    var isLanUpdating by remember { mutableStateOf(false) }
+
+    val loadLanConfig = {
+        scope.launch {
+            lanConfig = client.getLanConfig()
+            lanPortInput = lanConfig.port.toString()
+            deviceIps = client.getDeviceIpAddresses()
+        }
+    }
+
     // Dialog states
     var selectedClientForGrants by remember { mutableStateOf<ClientItem?>(null) }
     var clientGrantsList by remember { mutableStateOf<List<ClientGrantItem>>(emptyList()) }
@@ -124,6 +140,7 @@ fun SecurityScreen(
 
     LaunchedEffect(bearer) {
         loadClients()
+        loadLanConfig()
     }
 
     LazyColumn(
@@ -293,6 +310,131 @@ fun SecurityScreen(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.tertiary
                     )
+                }
+            }
+        }
+
+        item {
+            ContentCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("局域网 (LAN) 监听服务", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    }
+                    StatusBadge(status = if (lanConfig.enabled) "LISTENING" else "DISABLED")
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (lanConfig.enabled)
+                        "• Gateway 正在局域网开放安全 TLS 加密监听端口。\n• 外部电脑、平板或脚本可通过局域网 IP 与端口向网关发送受控请求。"
+                    else
+                        "• 局域网监听默认关闭。开启后，网关将使用 TLS 加密开放局域网 REST API，允许同一局域网内的设备配对并接入管理。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(if (lanConfig.enabled) "局域网监听服务已开启" else "开启局域网监听服务", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(if (lanConfig.enabled) "运行端口: ${lanConfig.port} (TLS 加密)" else "开启时会自动配置自签 TLS 证书并重启网关", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = lanConfig.enabled,
+                        enabled = !isLanUpdating,
+                        onCheckedChange = { enable ->
+                            scope.launch {
+                                isLanUpdating = true
+                                val port = lanPortInput.toIntOrNull() ?: 8443
+                                client.updateLanConfig(enable, port).fold(
+                                    onSuccess = { msg ->
+                                        onShowMessage(msg)
+                                        loadLanConfig()
+                                    },
+                                    onFailure = { onShowMessage("更新 LAN 配置失败: ${it.message}") }
+                                )
+                                isLanUpdating = false
+                            }
+                        }
+                    )
+                }
+
+                if (lanConfig.enabled) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("本机可用局域网访问地址:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    if (deviceIps.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            deviceIps.forEach { ip ->
+                                val fullUrl = "https://$ip:${lanConfig.port}"
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(fullUrl, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.primary)
+                                    IconButton(
+                                        onClick = {
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("LAN API", fullUrl))
+                                            onShowMessage("已复制地址: $fullUrl")
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "复制", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text("未检测到有效局域网 IP（请确认设备已连接 Wi-Fi 或热点）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = lanPortInput,
+                            onValueChange = { lanPortInput = it },
+                            label = { Text("监听端口") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Button(
+                            enabled = !isLanUpdating && lanPortInput.toIntOrNull() != null && lanPortInput.toInt() != lanConfig.port,
+                            onClick = {
+                                scope.launch {
+                                    isLanUpdating = true
+                                    val port = lanPortInput.toIntOrNull() ?: 8443
+                                    client.updateLanConfig(true, port).fold(
+                                        onSuccess = { msg ->
+                                            onShowMessage(msg)
+                                            loadLanConfig()
+                                        },
+                                        onFailure = { onShowMessage("更新端口失败: ${it.message}") }
+                                    )
+                                    isLanUpdating = false
+                                }
+                            }
+                        ) {
+                            Text("保存端口")
+                        }
+                    }
                 }
             }
         }

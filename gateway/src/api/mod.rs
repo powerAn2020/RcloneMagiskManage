@@ -40,6 +40,7 @@ pub fn app_router(s: AppState) -> Router {
             "/api/v1/system/backups",
             get(backups_list).post(backup_create),
         )
+        .route("/api/v1/system/logs/clear", post(logs_clear))
         .route("/api/v1/security/pairing/start", post(pair_start))
         .route("/api/v1/security/pairing/complete", post(pair_complete))
         .route("/api/v1/security/clients", get(clients))
@@ -72,7 +73,8 @@ pub fn app_router(s: AppState) -> Router {
             post(remote_acl_grant),
         )
         .route("/api/v1/remotes", get(remotes).post(remote_create))
-        .route("/api/v1/remotes/import", post(remote_create))
+        .route("/api/v1/remotes/providers", get(remote_providers))
+        .route("/api/v1/remotes/import", post(remote_import))
         .route(
             "/api/v1/remotes/{id}",
             get(remote_get).put(remote_update).delete(remote_delete),
@@ -93,6 +95,10 @@ pub fn app_router(s: AppState) -> Router {
         .route("/api/v1/jobs/{id}/log", get(job_log))
         .route("/api/v1/jobs/{id}/{action}", post(job_action))
         .route("/api/v1/mounts", get(mounts).post(mount_create))
+        .route(
+            "/api/v1/mounts/{id}",
+            get(mount_get).put(mount_update).delete(mount_delete),
+        )
         .route("/api/v1/mounts/{id}/{action}", post(mount_action))
         .route("/api/v1/crypt", get(crypts).post(crypt_create))
         .route("/api/v1/crypt/{id}/test", post(crypt_test))

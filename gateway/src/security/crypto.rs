@@ -150,6 +150,63 @@ pub fn obscure_rclone(value: &str) -> Result<String> {
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(out))
 }
 
+pub fn deobscure_rclone(value: &str) -> Result<String> {
+    type RcloneCtr = ctr::Ctr128BE<Aes256>;
+    const KEY: [u8; 32] = [
+        0x9c, 0x93, 0x5b, 0x48, 0x73, 0x0a, 0x55, 0x4d, 0x6b, 0xfd, 0x7c, 0x63, 0xc8, 0x86, 0xa9,
+        0x2b, 0xd3, 0x90, 0x19, 0x8e, 0xb8, 0x12, 0x8a, 0xfb, 0xf4, 0xde, 0x16, 0x2b, 0x8b, 0x95,
+        0xf6, 0x38,
+    ];
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(value)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(value))
+        .map_err(|_| GatewayError::Crypto)?;
+    if bytes.len() <= 16 {
+        return Err(GatewayError::Crypto);
+    }
+    let iv = &bytes[..16];
+    let mut ciphertext = bytes[16..].to_vec();
+    let mut cipher = RcloneCtr::new((&KEY).into(), iv.into());
+    cipher.apply_keystream(&mut ciphertext);
+    let s = String::from_utf8(ciphertext).map_err(|_| GatewayError::Crypto)?;
+    if s.chars().all(|c| !c.is_control() || c == '\t' || c == '\n' || c == '\r') {
+        Ok(s)
+    } else {
+        Err(GatewayError::Crypto)
+    }
+}
+
+pub fn is_rclone_obscured(value: &str) -> bool {
+    deobscure_rclone(value).is_ok()
+}
+
+pub fn is_rclone_password_key(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "pass"
+            | "password"
+            | "password2"
+            | "key_file_pass"
+            | "api_password"
+            | "library_key"
+            | "mailbox_password"
+            | "otp_secret_key"
+            | "file_password"
+            | "folder_password"
+            | "client_certificate_password"
+            | "plex_password"
+            | "secret"
+            | "secret_key"
+            | "secret_access_key"
+            | "token"
+            | "auth_token"
+    ) || lower.ends_with("_pass")
+        || lower.ends_with("_password")
+        || lower.ends_with("_secret")
+        || lower.ends_with("_token")
+}
+
 pub fn safe_request_segment(segment: &str) -> bool {
     !segment.is_empty()
         && segment.len() <= 128
@@ -241,6 +298,7 @@ pub fn allowed_request(method: &str, path: &str) -> bool {
             | ("GET", "/api/v1/system/migration")
             | ("GET", "/api/v1/system/backups")
             | ("POST", "/api/v1/system/backups")
+            | ("POST", "/api/v1/system/logs/clear")
             | ("POST", "/api/v1/security/pairing/start")
             | ("POST", "/api/v1/security/pairing/complete")
             | ("GET", "/api/v1/security/clients")
@@ -286,6 +344,9 @@ pub fn allowed_request(method: &str, path: &str) -> bool {
             valid_id(Some(id))
                 && matches!(*action, "start" | "pause" | "resume" | "cancel" | "retry")
                 && method == "POST"
+        }
+        ["", "api", "v1", "mounts", id] => {
+            valid_id(Some(id)) && matches!(method, "GET" | "PUT" | "DELETE")
         }
         ["", "api", "v1", "mounts", id, action] => {
             valid_id(Some(id))

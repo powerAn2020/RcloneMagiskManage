@@ -7,7 +7,10 @@ use uuid::Uuid;
 
 use crate::db::db;
 use crate::error::{GatewayError, Result};
-use crate::security::crypto::{decrypt_secret, ini_line_safe, obscure_rclone, restrict_file};
+use crate::security::crypto::{
+    decrypt_secret, ini_line_safe, is_rclone_obscured, is_rclone_password_key, obscure_rclone,
+    restrict_file,
+};
 use crate::state::AppState;
 use crate::types::TransferStats;
 
@@ -63,6 +66,31 @@ pub fn remote_id_by_name(s: &AppState, name: &str) -> Result<String> {
         .map_err(|_| GatewayError::Message("remote not found or disabled".into()))
 }
 
+static PROVIDERS_CACHE: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+
+pub async fn get_rclone_providers() -> Result<serde_json::Value> {
+    if let Some(cached) = PROVIDERS_CACHE.get() {
+        return Ok(cached.clone());
+    }
+    let mut cmd = rclone_command(&None);
+    cmd.arg("config").arg("providers");
+    let output = match cmd.output().await {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => {
+            Command::new("rclone")
+                .args(["config", "providers"])
+                .output()
+                .await
+                .map(|o| o.stdout)
+                .unwrap_or_default()
+        }
+    };
+    let val: serde_json::Value = serde_json::from_slice(&output)
+        .map_err(|e| GatewayError::Message(format!("failed to parse rclone providers: {e}")))?;
+    let _ = PROVIDERS_CACHE.set(val.clone());
+    Ok(val)
+}
+
 pub fn materialize_rclone_config_at(
     s: &AppState,
     ids: &[String],
@@ -87,12 +115,8 @@ pub fn materialize_rclone_config_at(
             return Err(GatewayError::Message("invalid remote configuration".into()));
         }
         let mut text = format!("[{name}]\ntype = {typ}\n");
-        if let Some(e) = endpoint {
-            if !ini_line_safe(&e) {
-                return Err(GatewayError::Message("invalid endpoint".into()));
-            }
-            text.push_str(&format!("endpoint = {e}\n"));
-        }
+        let mut written_keys = std::collections::HashSet::new();
+
         if let Some(sr) = secret_ref {
             let secret = decrypt_secret(&s.root, &sr, id)?;
             let obj = secret
@@ -112,9 +136,47 @@ pub fn materialize_rclone_config_at(
                 if !ini_line_safe(&value) {
                     return Err(GatewayError::Message("invalid secret value".into()));
                 }
-                text.push_str(&format!("{k} = {value}\n"));
+                let trimmed = value.trim();
+                if trimmed.is_empty() || trimmed == "[]" || trimmed == "{}" {
+                    continue;
+                }
+                let final_val = if is_rclone_password_key(k) && !is_rclone_obscured(trimmed) {
+                    obscure_rclone(trimmed)?
+                } else {
+                    trimmed.to_string()
+                };
+                text.push_str(&format!("{k} = {final_val}\n"));
+                written_keys.insert(k.clone());
             }
         }
+
+        // Protocol adaptive fallbacks for common/legacy parameters
+        if typ == "webdav" {
+            if !written_keys.contains("url") {
+                if let Some(ref e) = endpoint {
+                    if ini_line_safe(e) {
+                        text.push_str(&format!("url = {e}\n"));
+                    }
+                }
+            }
+            if !written_keys.contains("vendor") {
+                text.push_str("vendor = other\n");
+            }
+            if !written_keys.contains("user") {
+                if let Some(ref u) = written_keys.get("access_key") {
+                    let _ = u;
+                }
+            }
+        } else {
+            if !written_keys.contains("endpoint") {
+                if let Some(ref e) = endpoint {
+                    if ini_line_safe(e) {
+                        text.push_str(&format!("endpoint = {e}\n"));
+                    }
+                }
+            }
+        }
+
         sections.push(text);
     }
     if sections.is_empty() {
@@ -179,7 +241,11 @@ pub fn materialize_crypt_config(s: &AppState, id: &str) -> Result<(PathBuf, Stri
     writeln!(
         config,
         "\n[{name}]\ntype = crypt\nremote = {parent_name}:{remote_path}\npassword = {}",
-        obscure_rclone(&password)?
+        if is_rclone_obscured(&password) {
+            password
+        } else {
+            obscure_rclone(&password)?
+        }
     )?;
     restrict_file(&base)?;
     Ok((base, name))
@@ -240,4 +306,41 @@ pub fn redact_log_text(input: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub fn clean_error_message(input: &str) -> String {
+    let mut lines = Vec::new();
+    for line in input.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let mut cleaned = trimmed.to_string();
+        for key in &[
+            "pass",
+            "password",
+            "secret",
+            "token",
+            "access_key",
+            "client_secret",
+            "bearer",
+        ] {
+            if let Some(pos) = cleaned.to_ascii_lowercase().find(key) {
+                let rest = &cleaned[pos + key.len()..];
+                if rest.starts_with('=')
+                    || rest.starts_with(':')
+                    || rest.starts_with(" =")
+                    || rest.starts_with(" :")
+                {
+                    cleaned = format!("{}: [REDACTED]", &cleaned[..pos + key.len()]);
+                }
+            }
+        }
+        lines.push(cleaned);
+    }
+    if lines.is_empty() {
+        "remote connection test failed".into()
+    } else {
+        lines.join("\n")
+    }
 }
