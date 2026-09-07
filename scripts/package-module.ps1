@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $Root = (Get-Item $PSScriptRoot).Parent.FullName
 
 # 1. Ensure NDK & Rust Toolchain Environment
@@ -90,15 +91,19 @@ function Build-ForArch($RustTarget, $Abi, $ZipName) {
     # 6. Package flashable ZIP
     $TargetZip = "$Root/dist/rclone-manager-$RustTarget.zip"
     $AliasZip = "$Root/dist/$ZipName"
-    if (Test-Path $TargetZip) { Remove-Item -Force $TargetZip }
     if (Test-Path $AliasZip) { Remove-Item -Force $AliasZip }
 
     Write-Host "[*] Packaging flashable zip to $AliasZip..." -ForegroundColor Cyan
     [System.IO.Compression.ZipFile]::CreateFromDirectory($OutDir, $AliasZip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
-    Copy-Item $AliasZip $TargetZip
+    try {
+        if (Test-Path $TargetZip) { Remove-Item -Force $TargetZip -ErrorAction SilentlyContinue }
+        Copy-Item $AliasZip $TargetZip -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Warning "Notice: $TargetZip was locked by another process (e.g. 7-Zip). $AliasZip was successfully generated!"
+    }
 
     Write-Host "✅ Successfully built: $AliasZip" -ForegroundColor Green
-    Write-Host "   Size: $((Get-Item $AliasZip).Length / 1MB) MB" -ForegroundColor Gray
+    Write-Host "   Size: $([math]::Round((Get-Item $AliasZip).Length / 1MB, 2)) MB" -ForegroundColor Gray
 }
 
 # Determine targets
