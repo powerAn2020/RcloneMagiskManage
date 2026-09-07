@@ -3,10 +3,44 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-android { namespace = "com.android.rclone.manager"; compileSdk = 37
-    defaultConfig { applicationId = "com.android.rclone.manager"; minSdk = 29; targetSdk = 35; versionCode = 110; versionName = "1.1.0" }
+android {
+    namespace = "io.github.poweran2020.rclone.manager"
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "io.github.poweran2020.rclone.manager"
+        minSdk = 29
+        targetSdk = 35
+        versionCode = 110
+        versionName = "1.1.0"
+    }
+
+    val keystorePath = System.getenv("KEYSTORE_FILE")
+    signingConfigs {
+        if (!keystorePath.isNullOrEmpty()) {
+            val resolvedFile = rootProject.file(keystorePath).let { if (it.exists()) it else file(keystorePath) }
+            create("release") {
+                storeFile = resolvedFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (!keystorePath.isNullOrEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+
     buildFeatures { compose = true }
 }
+
 
 kotlin { jvmToolchain(17) }
 

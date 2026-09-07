@@ -277,7 +277,7 @@ The command prints `migrated_jobs=N`; rerunning prints `already_migrated=true`. 
 - Final combined build after Crypt profile API: Gateway Android cross-build and `gradle :app:assembleDebug --no-daemon` both pass on 2026-09-03.
 - Final static gate after rclone.conf migration and security rotation additions: `cargo fmt --check`, `cargo test --workspace` (8/8), Android x86_64 cross-build, and all shell syntax checks pass.
 - Latest Gateway cross-build after enabled-mount recovery and rclone path resolution: `cargo build --release --target x86_64-linux-android -p rclone-gateway` pass.
-- Android App install/start: `adb install -r` returned `Success`; `am start -n com.android.rclone.manager/.MainActivity` showed the Activity resumed and visible on `emulator-5554`; no `FATAL EXCEPTION` was found in the captured logcat window.
+- Android App install/start: `adb install -r` returned `Success`; `am start -n io.github.poweran2020.rclone.manager/.MainActivity` showed the Activity resumed and visible on `emulator-5554`; no `FATAL EXCEPTION` was found in the captured logcat window.
 - OpenAPI validation: `yaml.safe_load(open('openapi-v1.yaml'))` succeeded.
 - Strict endpoint allow-list tests now cover dynamic IDs/actions, reject unknown job actions, malformed grant IDs, traversal in query strings, and raw RC paths.
 - Pairing completion was smoke-tested after a lock-lifetime fix: emulator returned `clientId`, one-time token, and `expiresIn=2592000`; authenticated `/api/v1/system/info` returned rclone version and `root=true`.

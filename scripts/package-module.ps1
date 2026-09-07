@@ -13,23 +13,34 @@ $NdkRoot = if ($env:NDK_ROOT) { $env:NDK_ROOT } else { "C:/Development/JetBrains
 $LlvmBin = "$NdkRoot/toolchains/llvm/prebuilt/windows-x86_64/bin"
 if (Test-Path "$LlvmBin/clang.exe") {
     $env:PATH = "$LlvmBin;$env:PATH"
-    $env:CC_x86_64_linux_android = "$LlvmBin/clang.exe"
-    $env:CXX_x86_64_linux_android = "$LlvmBin/clang++.exe"
+    $env:CC_x86_64_linux_android = "$LlvmBin/x86_64-linux-android34-clang.cmd"
+    $env:CXX_x86_64_linux_android = "$LlvmBin/x86_64-linux-android34-clang++.cmd"
     $env:AR_x86_64_linux_android = "$LlvmBin/llvm-ar.exe"
+    $env:CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER = "$LlvmBin/x86_64-linux-android34-clang.cmd"
+
     $env:CC_aarch64_linux_android = "$LlvmBin/aarch64-linux-android34-clang.cmd"
     $env:CXX_aarch64_linux_android = "$LlvmBin/aarch64-linux-android34-clang++.cmd"
     $env:AR_aarch64_linux_android = "$LlvmBin/llvm-ar.exe"
+    $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "$LlvmBin/aarch64-linux-android34-clang.cmd"
 }
 
+
 # 2. Verify APK exists or build it
-$ApkPath = "$Root/app/build/outputs/apk/debug/app-debug.apk"
-if (-not (Test-Path $ApkPath)) {
+$ReleaseApk = "$Root/app/build/outputs/apk/release/app-release.apk"
+$DebugApk = "$Root/app/build/outputs/apk/debug/app-debug.apk"
+$ApkPath = if (Test-Path $ReleaseApk) {
+    $ReleaseApk
+} elseif (Test-Path $DebugApk) {
+    $DebugApk
+} else {
     Write-Host "[*] Building Android companion APK..." -ForegroundColor Cyan
     & "$Root/gradlew.bat" assembleDebug
+    if (Test-Path $ReleaseApk) { $ReleaseApk } else { $DebugApk }
 }
 if (-not (Test-Path $ApkPath)) {
     Write-Error "Failed to locate APK at $ApkPath"
 }
+
 
 function Build-ForArch($RustTarget, $Abi, $ZipName) {
     Write-Host "`n========================================================" -ForegroundColor Green
@@ -83,7 +94,7 @@ function Build-ForArch($RustTarget, $Abi, $ZipName) {
     if (Test-Path $AliasZip) { Remove-Item -Force $AliasZip }
 
     Write-Host "[*] Packaging flashable zip to $AliasZip..." -ForegroundColor Cyan
-    tar.exe -a -c -f $AliasZip -C $OutDir .
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($OutDir, $AliasZip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
     Copy-Item $AliasZip $TargetZip
 
     Write-Host "✅ Successfully built: $AliasZip" -ForegroundColor Green

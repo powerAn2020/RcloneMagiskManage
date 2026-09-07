@@ -12,20 +12,47 @@ case "$TARGET" in
   *) ABI="$TARGET" ;;
 esac
 
-# Make the documented Windows/NDK environment reproducible when this script is
-# invoked directly from Git Bash or PowerShell. Callers can override NDK_ROOT.
-NDK_ROOT=${NDK_ROOT:-C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264}
-LLVM_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/windows-x86_64/bin"
-if [ -x "$LLVM_BIN/clang.exe" ]; then
+# Detect Linux NDK in CI/CD environment or Windows NDK
+if [ -d "${ANDROID_NDK_LATEST_HOME:-}" ]; then
+  NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
+elif [ -d "${ANDROID_NDK_HOME:-}" ]; then
+  NDK_ROOT="$ANDROID_NDK_HOME"
+elif [ -d "${ANDROID_HOME:-}/ndk" ]; then
+  NDK_ROOT=$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+else
+  NDK_ROOT=${NDK_ROOT:-C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264}
+fi
+
+if [ -d "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin" ]; then
+  LLVM_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
   export PATH="$LLVM_BIN:$PATH"
-  export CC_x86_64_linux_android=${CC_x86_64_linux_android:-"$LLVM_BIN/clang.exe"}
-  export CXX_x86_64_linux_android=${CXX_x86_64_linux_android:-"$LLVM_BIN/clang++.exe"}
-  export AR_x86_64_linux_android=${AR_x86_64_linux_android:-"$LLVM_BIN/llvm-ar.exe"}
-  export CC_aarch64_linux_android=${CC_aarch64_linux_android:-"$LLVM_BIN/aarch64-linux-android34-clang.cmd"}
-  export CXX_aarch64_linux_android=${CXX_aarch64_linux_android:-"$LLVM_BIN/aarch64-linux-android34-clang++.cmd"}
-  export AR_aarch64_linux_android=${AR_aarch64_linux_android:-"$LLVM_BIN/llvm-ar.exe"}
+  export CC_x86_64_linux_android="$LLVM_BIN/x86_64-linux-android34-clang"
+  export CXX_x86_64_linux_android="$LLVM_BIN/x86_64-linux-android34-clang++"
+  export AR_x86_64_linux_android="$LLVM_BIN/llvm-ar"
+  export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$LLVM_BIN/x86_64-linux-android34-clang"
+  export CARGO_TARGET_X86_64_LINUX_ANDROID_AR="$LLVM_BIN/llvm-ar"
+  export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS=""
+
+  export CC_aarch64_linux_android="$LLVM_BIN/aarch64-linux-android34-clang"
+  export CXX_aarch64_linux_android="$LLVM_BIN/aarch64-linux-android34-clang++"
+  export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar"
+  export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$LLVM_BIN/aarch64-linux-android34-clang"
+  export CARGO_TARGET_AARCH64_LINUX_ANDROID_AR="$LLVM_BIN/llvm-ar"
+  export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS=""
+elif [ -x "$NDK_ROOT/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe" ]; then
+  LLVM_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/windows-x86_64/bin"
+  export PATH="$LLVM_BIN:$PATH"
+  export CC_x86_64_linux_android="$LLVM_BIN/x86_64-linux-android34-clang.cmd"
+  export CXX_x86_64_linux_android="$LLVM_BIN/x86_64-linux-android34-clang++.cmd"
+  export AR_x86_64_linux_android="$LLVM_BIN/llvm-ar.exe"
+  export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$LLVM_BIN/x86_64-linux-android34-clang.cmd"
+  export CC_aarch64_linux_android="$LLVM_BIN/aarch64-linux-android34-clang.cmd"
+  export CXX_aarch64_linux_android="$LLVM_BIN/aarch64-linux-android34-clang++.cmd"
+  export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar.exe"
+  export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$LLVM_BIN/aarch64-linux-android34-clang.cmd"
 fi
 cargo build --release --target "$TARGET" -p rclone-gateway
+
 rm -rf "$OUT"
 mkdir -p "$OUT/bin"
 
@@ -52,13 +79,22 @@ if [ -d "$ROOT/magisk-module/META-INF" ]; then
 fi
 
 # 4. Integrate Android companion APK (installed via customize.sh)
-APK_SOURCE="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
-if [ -f "$APK_SOURCE" ]; then
+APK_SOURCE=""
+if [ -f "$ROOT/app/build/outputs/apk/release/app-release.apk" ]; then
+  APK_SOURCE="$ROOT/app/build/outputs/apk/release/app-release.apk"
+elif [ -f "$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+  APK_SOURCE="$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
+elif [ -f "$ROOT/app/build/outputs/apk/debug/app-debug.apk" ]; then
+  APK_SOURCE="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
+fi
+
+if [ -n "$APK_SOURCE" ]; then
   echo "Integrating companion APK: $APK_SOURCE -> $OUT/app.apk"
   cp "$APK_SOURCE" "$OUT/app.apk"
 else
-  echo "⚠️ Warning: $APK_SOURCE not found, module will be packaged without app.apk"
+  echo "⚠️ Warning: No companion APK found in app/build/outputs/apk/, packaging without app.apk"
 fi
+
 
 # 5. Enforce: No system/ directory (No system mount overlay)
 rm -rf "$OUT/system"
@@ -71,12 +107,13 @@ chmod 0755 "$OUT/bin/"* "$OUT/"*.sh
 ZIP_OUT="$ROOT/dist/rclone-manager-$TARGET.zip"
 rm -f "$ZIP_OUT"
 if command -v zip >/dev/null 2>&1; then
-  (cd "$OUT" && zip -r -q "$ZIP_OUT" .)
-elif command -v tar >/dev/null 2>&1; then
-  tar -a -c -f "$ZIP_OUT" -C "$OUT" .
+  (cd "$OUT" && zip -r -q "$ZIP_OUT" *)
 elif command -v powershell.exe >/dev/null 2>&1; then
-  powershell.exe -Command "Compress-Archive -Path '$OUT/*' -DestinationPath '$ZIP_OUT' -Force"
+  powershell.exe -Command "[System.IO.Compression.ZipFile]::CreateFromDirectory('$OUT', '$ZIP_OUT', [System.IO.Compression.CompressionLevel]::Optimal, `$false)"
+elif command -v tar >/dev/null 2>&1; then
+  (cd "$OUT" && tar -a -c -f "$ZIP_OUT" *)
 fi
+
 
 # Also create concise alias ZIP (e.g., rclone-manager-arm64.zip, rclone-manager-x86_64.zip)
 ALIAS_NAME=""

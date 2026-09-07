@@ -7,6 +7,8 @@ magisk-module/prebuilt/
 *.zip
 *.hprof
 *.jar
+*.jks
+*.keystore
 
 # Gradle & Android build files
 .gradle/
