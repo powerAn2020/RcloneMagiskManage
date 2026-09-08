@@ -476,8 +476,21 @@ fun MountEditDialog(
                                 mountPoint = TextFieldValue("/mnt/rclone-$trimmed")
                             }
                         },
-                        label = { Text("全局通用挂载") },
-                        leadingIcon = if (!isIsolated) { { Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(16.dp)) } } else null,
+                        label = {
+                            Text(
+                                text = "全局挂载",
+                                maxLines = 1,
+                                softWrap = false,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Public,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
                         modifier = Modifier.weight(1f)
                     )
                     FilterChip(
@@ -490,8 +503,21 @@ fun MountEditDialog(
                                 mountPoint = TextFieldValue("/data/data/$pkg/files/rclone/$trimmed")
                             }
                         },
-                        label = { Text("应用专属隔离") },
-                        leadingIcon = if (isIsolated) { { Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(16.dp)) } } else null,
+                        label = {
+                            Text(
+                                text = "应用专属",
+                                maxLines = 1,
+                                softWrap = false,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Security,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -587,7 +613,7 @@ fun MountEditDialog(
                         mountPoint = it
                         isCustomMountPoint = true
                     },
-                    label = { Text("挂载点路径 (Mount Point)") },
+                    label = { Text("挂载点路径") },
                     modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {
                         IconButton(onClick = { showLocalMountPicker = true }) {
