@@ -62,6 +62,9 @@ pub fn path_is_within(base: &FsPath, candidate: &FsPath) -> bool {
 }
 
 pub fn derived_bind_target(source: &str) -> Option<String> {
+    if source.starts_with("/data/data/") || source.starts_with("/data/user/0/") {
+        return None;
+    }
     let name = source.strip_prefix("/mnt/rclone-")?;
     if name.is_empty()
         || !name
@@ -71,6 +74,56 @@ pub fn derived_bind_target(source: &str) -> Option<String> {
         return None;
     }
     Some(format!("/data/media/0/{name}"))
+}
+
+pub fn extract_package_from_path(p: &str) -> Option<String> {
+    let sub = p
+        .strip_prefix("/data/data/")
+        .or_else(|| p.strip_prefix("/data/user/0/"))?;
+    let (pkg, _) = sub.split_once('/')?;
+    if crate::security::crypto::is_valid_package_name(pkg) {
+        Some(pkg.to_string())
+    } else {
+        None
+    }
+}
+
+#[allow(unused_variables)]
+pub fn resolve_package_uid_gid(pkg: &str) -> Option<(u32, u32)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(meta) = fs::metadata(format!("/data/data/{pkg}")) {
+            return Some((meta.uid(), meta.gid()));
+        }
+        if let Ok(meta) = fs::metadata(format!("/data/user/0/{pkg}")) {
+            return Some((meta.uid(), meta.gid()));
+        }
+    }
+    None
+}
+
+#[allow(unused_variables)]
+pub fn ensure_mount_directory(mount_point: &str, uid_gid: Option<(u32, u32)>) -> std::io::Result<()> {
+    fs::create_dir_all(mount_point)?;
+    #[cfg(unix)]
+    if let Some((uid, gid)) = uid_gid {
+        use std::os::unix::fs::chown;
+        let mut p = FsPath::new(mount_point);
+        while let Some(parent) = p.parent() {
+            if p.ends_with("files")
+                || p.ends_with("cache")
+                || parent.ends_with("data")
+                || parent.ends_with("user/0")
+            {
+                break;
+            }
+            let _ = chown(p, Some(uid), Some(gid));
+            p = parent;
+        }
+        let _ = chown(mount_point, Some(uid), Some(gid));
+    }
+    Ok(())
 }
 
 pub fn umount_command() -> std::process::Command {
@@ -177,7 +230,7 @@ pub fn guard_local_path(path: &str) -> Result<()> {
 
 pub fn mount(c: &Connection, id: &str) -> Result<Mount> {
     c.query_row(
-        "SELECT mp.id,mp.name,mp.remote_id,r.name,mp.remote_path,mp.mount_point,mp.cache_dir,mp.status,mp.pid,mp.read_only,mp.cache_mode,mp.cache_max_size,mp.cache_max_age,mp.enabled FROM mount_profile mp LEFT JOIN remote r ON mp.remote_id=r.id WHERE mp.id=?",
+        "SELECT mp.id,mp.name,mp.remote_id,r.name,mp.remote_path,mp.mount_point,mp.cache_dir,mp.status,mp.pid,mp.read_only,mp.cache_mode,mp.cache_max_size,mp.cache_max_age,mp.enabled,mp.target_package,mp.isolated FROM mount_profile mp LEFT JOIN remote r ON mp.remote_id=r.id WHERE mp.id=?",
         params![id],
         |r| {
             Ok(Mount {
@@ -195,6 +248,8 @@ pub fn mount(c: &Connection, id: &str) -> Result<Mount> {
                 cache_max_size: r.get(11)?,
                 cache_max_age: r.get(12)?,
                 enabled: r.get::<_, i64>(13)? != 0,
+                target_package: r.get(14)?,
+                isolated: r.get::<_, i64>(15).unwrap_or(0) != 0,
             })
         },
     )
@@ -235,9 +290,29 @@ pub async fn recover_mount(state: AppState, id: String) {
         String,
         String,
         String,
+        Option<String>,
+        bool,
     )> = (|| {
         let c = db(&state)?;
-        Ok(c.query_row("SELECT name,remote_id,remote_path,mount_point,cache_dir,read_only,cache_mode,cache_max_size,cache_max_age FROM mount_profile WHERE id=? AND enabled=1", params![id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get::<_,i64>(5)? != 0,r.get(6)?,r.get(7)?,r.get(8)?)))?)
+        Ok(c.query_row(
+            "SELECT name,remote_id,remote_path,mount_point,cache_dir,read_only,cache_mode,cache_max_size,cache_max_age,target_package,isolated FROM mount_profile WHERE id=? AND enabled=1",
+            params![id],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get::<_, i64>(5)? != 0,
+                    r.get(6)?,
+                    r.get(7)?,
+                    r.get(8)?,
+                    r.get(9)?,
+                    r.get::<_, i64>(10).unwrap_or(0) != 0,
+                ))
+            },
+        )?)
     })();
     let Ok((
         _,
@@ -249,6 +324,8 @@ pub async fn recover_mount(state: AppState, id: String) {
         cache_mode,
         max_size,
         max_age,
+        target_package,
+        isolated,
     )) = row
     else {
         return;
@@ -259,7 +336,13 @@ pub async fn recover_mount(state: AppState, id: String) {
     let Ok((remote_name, _)) = remote_target(&state, &remote_id) else {
         return;
     };
-    let _ = fs::create_dir_all(&mount_point);
+    let is_isolated = isolated
+        || target_package.is_some()
+        || mount_point.starts_with("/data/data/")
+        || mount_point.starts_with("/data/user/0/");
+    let pkg = target_package.clone().or_else(|| extract_package_from_path(&mount_point));
+    let uid_gid = pkg.as_deref().and_then(resolve_package_uid_gid);
+    let _ = ensure_mount_directory(&mount_point, uid_gid);
     let Ok(config) = materialize_mount_config(&state, &id, &remote_id) else {
         remove_mount_config(&state.root, &id);
         return;
@@ -285,6 +368,16 @@ pub async fn recover_mount(state: AppState, id: String) {
     if read_only {
         command.arg("--read-only");
     }
+    #[cfg(unix)]
+    {
+        command.arg("--allow-other");
+        if let Some((uid, gid)) = uid_gid {
+            command.arg("--uid").arg(uid.to_string());
+            command.arg("--gid").arg(gid.to_string());
+            command.arg("--dir-perms").arg("0700");
+            command.arg("--file-perms").arg("0600");
+        }
+    }
     let child = command.spawn();
     if let Ok(mut child) = child {
         if let Some(pid) = child.id() {
@@ -294,7 +387,9 @@ pub async fn recover_mount(state: AppState, id: String) {
                     params![pid as i64, now(), id],
                 );
             }
-            tokio::spawn(bind_mount_when_ready(mount_point.clone()));
+            if !is_isolated {
+                tokio::spawn(bind_mount_when_ready(mount_point.clone()));
+            }
             let monitor_state = state.clone();
             let monitor_id = id.clone();
             tokio::spawn(async move {
@@ -305,7 +400,9 @@ pub async fn recover_mount(state: AppState, id: String) {
                         params![now(), monitor_id, pid as i64],
                     );
                 }
-                unmount_derived_bind(&mount_point);
+                if !is_isolated {
+                    unmount_derived_bind(&mount_point);
+                }
                 remove_mount_config(&monitor_state.root, &monitor_id);
             });
         } else {

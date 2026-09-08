@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
@@ -57,11 +58,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +89,8 @@ import io.github.poweran2020.rclone.manager.ui.component.LoadingView
 import io.github.poweran2020.rclone.manager.ui.component.MaterialTextField
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -109,13 +114,32 @@ fun SecurityScreen(
     var showPairingCompleteDialog by remember { mutableStateOf(false) }
     var showRePairOptions by remember { mutableStateOf(false) }
 
+    // Keep an updated reference to active pairing code for lifecycle disposal
+    val currentPairingCodeRef = rememberUpdatedState(pairingCodeInfo)
+    DisposableEffect(Unit) {
+        onDispose {
+            val activeCode = currentPairingCodeRef.value
+            if (!activeCode.isNullOrEmpty()) {
+                // Immediately destroy/cancel pairing code on gateway backend when leaving the screen
+                CoroutineScope(Dispatchers.IO).launch {
+                    client.pairingCancel(activeCode)
+                }
+            }
+        }
+    }
+
     // Dynamic countdown timer for pairing code
     LaunchedEffect(pairingExpiresAt) {
         val target = pairingExpiresAt ?: return@LaunchedEffect
         while (true) {
             val diff = ((target - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L).toInt()
             pairingRemainingSeconds = diff
-            if (diff <= 0) break
+            if (diff <= 0) {
+                pairingCodeInfo?.let { expiredCode ->
+                    client.pairingCancel(expiredCode)
+                }
+                break
+            }
             kotlinx.coroutines.delay(1000L)
         }
     }
@@ -296,6 +320,9 @@ fun SecurityScreen(
                     OutlinedButton(
                         onClick = {
                             scope.launch {
+                                pairingCodeInfo?.let { oldCode ->
+                                    client.pairingCancel(oldCode)
+                                }
                                 client.pairingStart().fold(
                                     onSuccess = { res ->
                                         val obj = JSONObject(res)
@@ -357,11 +384,28 @@ fun SecurityScreen(
                                     )
                                 }
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                IconButton(onClick = {
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Pairing Code", code))
-                                    onShowMessage("已复制配对码: $code")
-                                }) {
-                                    Icon(Icons.Default.ContentCopy, contentDescription = "复制配对码")
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = {
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Pairing Code", code))
+                                        onShowMessage("已复制配对码: $code")
+                                    }) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "复制配对码")
+                                    }
+                                    IconButton(onClick = {
+                                        scope.launch {
+                                            client.pairingCancel(code)
+                                            pairingCodeInfo = null
+                                            pairingExpiresAt = null
+                                            pairingRemainingSeconds = 0
+                                            onShowMessage("已立即作废配对码")
+                                        }
+                                    }) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "作废配对码",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -378,11 +422,22 @@ fun SecurityScreen(
                             ) {
                                 Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                                 Text(
-                                    text = "⚠️ 配对码已失效过期 (300秒已过)，请重新点击上方按钮获取新配对码",
+                                    text = "⚠️ 配对码已失效过期，请重新获取",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        pairingCodeInfo?.let { client.pairingCancel(it) }
+                                        pairingCodeInfo = null
+                                        pairingExpiresAt = null
+                                        pairingRemainingSeconds = 0
+                                    }
+                                }) {
+                                    Text("清除", color = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
@@ -746,6 +801,11 @@ fun SecurityScreen(
                                         val token = json.optString("token")
                                         tokenStore.write(token)
                                         onTokenUpdated(token)
+                                        if (code == pairingCodeInfo) {
+                                            pairingCodeInfo = null
+                                            pairingExpiresAt = null
+                                            pairingRemainingSeconds = 0
+                                        }
                                         onShowMessage("配对成功！令牌已自动加密落盘并生效")
                                         showPairingCompleteDialog = false
                                         loadClients()

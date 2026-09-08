@@ -308,6 +308,8 @@ data class MountProfileItem(
     val cacheMaxSize: String,
     val cacheMaxAge: String,
     val enabled: Boolean,
+    val targetPackage: String? = null,
+    val isolated: Boolean = false,
 )
 
 fun parseMounts(raw: String): List<MountProfileItem> = runCatching {
@@ -331,6 +333,8 @@ fun parseMounts(raw: String): List<MountProfileItem> = runCatching {
                     cacheMaxSize = item.optString("cacheMaxSize", "32G"),
                     cacheMaxAge = item.optString("cacheMaxAge", "36h"),
                     enabled = item.optBoolean("enabled", false),
+                    targetPackage = item.optNullableString("targetPackage"),
+                    isolated = item.optBoolean("isolated", false),
                 )
             )
         }

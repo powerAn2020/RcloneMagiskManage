@@ -51,13 +51,15 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun jobLog(id: String, token: String): Result<String> =
         request("GET", "/api/v1/jobs/${encode(id)}/log", token)
 
-    suspend fun createMount(name: String, remoteId: String, mountPoint: String, token: String, remotePath: String? = null, cacheDir: String? = null, readOnly: Boolean = false, cacheMode: String? = null, cacheMaxSize: String? = null, cacheMaxAge: String? = null): Result<String> =
+    suspend fun createMount(name: String, remoteId: String, mountPoint: String, token: String, remotePath: String? = null, cacheDir: String? = null, readOnly: Boolean = false, cacheMode: String? = null, cacheMaxSize: String? = null, cacheMaxAge: String? = null, targetPackage: String? = null, isolated: Boolean = false): Result<String> =
         request("POST", "/api/v1/mounts", token, JSONObject().put("name", name).put("remoteId", remoteId).put("mountPoint", mountPoint).put("readOnly", readOnly).apply {
             if (!remotePath.isNullOrBlank()) put("remotePath", remotePath)
             if (!cacheDir.isNullOrBlank()) put("cacheDir", cacheDir)
             if (!cacheMode.isNullOrBlank()) put("cacheMode", cacheMode)
             if (!cacheMaxSize.isNullOrBlank()) put("cacheMaxSize", cacheMaxSize)
             if (!cacheMaxAge.isNullOrBlank()) put("cacheMaxAge", cacheMaxAge)
+            if (!targetPackage.isNullOrBlank()) put("targetPackage", targetPackage)
+            if (isolated) put("isolated", true)
         })
 
     suspend fun listFiles(remoteId: String, path: String, token: String): Result<String> =
@@ -107,6 +109,10 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun pairingComplete(code: String, name: String, publicKey: String): Result<String> =
         request("POST", "/api/v1/security/pairing/complete", body = JSONObject().put("pairingCode", code).put("clientName", name).put("publicKey", publicKey))
     suspend fun pairingStart(): Result<String> = request("POST", "/api/v1/security/pairing/start")
+    suspend fun pairingCancel(code: String? = null): Result<String> {
+        val body = if (code != null) JSONObject().put("pairingCode", code) else null
+        return request("POST", "/api/v1/security/pairing/cancel", body = body)
+    }
 
     suspend fun jobAction(id: String, action: String, token: String): Result<String> =
         request("POST", "/api/v1/jobs/${encode(id)}/${requireAction(action, setOf("start", "pause", "resume", "cancel", "retry"))}", token)
@@ -128,7 +134,9 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         readOnly: Boolean = false,
         cacheMode: String? = null,
         cacheMaxSize: String? = null,
-        cacheMaxAge: String? = null
+        cacheMaxAge: String? = null,
+        targetPackage: String? = null,
+        isolated: Boolean = false
     ): Result<String> =
         request("PUT", "/api/v1/mounts/${encode(id)}", token, JSONObject().put("name", name).put("remoteId", remoteId).put("mountPoint", mountPoint).put("readOnly", readOnly).apply {
             if (!remotePath.isNullOrBlank()) put("remotePath", remotePath)
@@ -136,6 +144,8 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
             if (!cacheMode.isNullOrBlank()) put("cacheMode", cacheMode)
             if (!cacheMaxSize.isNullOrBlank()) put("cacheMaxSize", cacheMaxSize)
             if (!cacheMaxAge.isNullOrBlank()) put("cacheMaxAge", cacheMaxAge)
+            if (!targetPackage.isNullOrBlank()) put("targetPackage", targetPackage)
+            if (isolated) put("isolated", true)
         })
 
     suspend fun deleteMount(id: String, token: String): Result<String> =
@@ -450,5 +460,30 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         }
 
         ips.toList()
+    }
+
+    suspend fun isKeepOnUninstallEnabled(): Boolean = withContext(Dispatchers.IO) {
+        val keepFile = "/data/adb/rclone-manage/KEEP_ON_UNINSTALL"
+        runCatching {
+            val res = Shell.cmd("[ -f '$keepFile' ]").exec()
+            res.isSuccess
+        }.getOrDefault(false)
+    }
+
+    suspend fun setKeepOnUninstallEnabled(enabled: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        val rootDir = "/data/adb/rclone-manage"
+        val keepFile = "$rootDir/KEEP_ON_UNINSTALL"
+        runCatching {
+            val cmd = if (enabled) {
+                "mkdir -p '$rootDir' && touch '$keepFile' && chmod 0600 '$keepFile'"
+            } else {
+                "rm -f '$keepFile'"
+            }
+            val res = Shell.cmd(cmd).exec()
+            if (!res.isSuccess) {
+                throw RuntimeException("Root 命令执行失败: exitCode=${res.code}")
+            }
+            Unit
+        }
     }
 }

@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -83,17 +84,18 @@ fun ContentCard(
 @Composable
 fun StatusBadge(status: String, modifier: Modifier = Modifier) {
     val upper = status.uppercase()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val (bgColor, textColor) = when {
         upper in setOf("RUNNING", "ONLINE", "ACTIVE", "SUCCESS", "TRUE", "ENABLED") ->
-            Color(0xFFE8F5E9) to Color(0xFF2E7D32)
+            if (isDark) Color(0xFF1E382B) to Color(0xFF81C784) else Color(0xFFE8F5E9) to Color(0xFF2E7D32)
         upper in setOf("FAILED", "ERROR", "CRASHED", "CANCELLED", "OFFLINE") ->
-            Color(0xFFFFEBEE) to Color(0xFFC62828)
+            if (isDark) Color(0xFF3E2323) to Color(0xFFE57373) else Color(0xFFFFEBEE) to Color(0xFFC62828)
         upper in setOf("STARTING", "STOPPING", "QUEUED", "PAUSE_REQUESTED", "CANCEL_REQUESTED", "CONNECTING") ->
-            Color(0xFFFFF8E1) to Color(0xFFF57F17)
+            if (isDark) Color(0xFF3E321E) to Color(0xFFFFB74D) else Color(0xFFFFF8E1) to Color(0xFFF57F17)
         upper in setOf("PAUSED", "STOPPED", "DISABLED", "FALSE") ->
-            Color(0xFFECEFF1) to Color(0xFF455A64)
+            if (isDark) Color(0xFF2B2E33) to Color(0xFFB0BEC5) else Color(0xFFECEFF1) to Color(0xFF455A64)
         else ->
-            Color(0xFFEDE7F6) to Color(0xFF512DA8)
+            if (isDark) Color(0xFF2E233E) to Color(0xFFBA68C8) else Color(0xFFEDE7F6) to Color(0xFF512DA8)
     }
     Box(
         modifier = modifier

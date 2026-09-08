@@ -1,0 +1,29 @@
+{
+    "version": 1,
+    "package": "io.github.poweran2020.rclone.manager",
+    "name": "Rclone Root Manager",
+    "root": {
+        "enabled": true,
+        "uid": 0,
+        "gid": 0,
+        "groups": [
+            0,
+            2000,
+            1015,
+            1028,
+            3003
+        ],
+        "capabilities": [
+            "CAP_DAC_OVERRIDE",
+            "CAP_DAC_READ_SEARCH",
+            "CAP_FOWNER",
+            "CAP_KILL",
+            "CAP_NET_ADMIN"
+        ],
+        "namespace": "inherited",
+        "selinux": "u:r:ksu:s0"
+    },
+    "non_root": {
+        "use_custom_profile": false
+    }
+}

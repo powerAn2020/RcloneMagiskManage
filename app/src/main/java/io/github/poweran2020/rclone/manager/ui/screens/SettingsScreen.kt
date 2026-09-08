@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import io.github.poweran2020.rclone.manager.GatewayClient
+import io.github.poweran2020.rclone.manager.data.ThemeMode
 import io.github.poweran2020.rclone.manager.data.model.AuditLogItem
 import io.github.poweran2020.rclone.manager.data.model.BackupItem
 import io.github.poweran2020.rclone.manager.data.model.MigrationStatusItem
@@ -82,6 +84,8 @@ fun SettingsScreen(
     padding: PaddingValues,
     client: GatewayClient,
     bearer: String,
+    themeMode: ThemeMode,
+    onThemeModeChanged: (ThemeMode) -> Unit,
     onEditToken: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
@@ -106,6 +110,9 @@ fun SettingsScreen(
     var isMigrating by remember { mutableStateOf(false) }
     var showMigrationErrorsDialog by remember { mutableStateOf(false) }
     var showLegacyPathPicker by remember { mutableStateOf(false) }
+
+    var keepOnUninstall by remember { mutableStateOf(false) }
+    var isUpdatingKeepState by remember { mutableStateOf(false) }
 
     // Editable settings
     var logRetentionDays by remember { mutableStateOf(TextFieldValue("14")) }
@@ -135,6 +142,9 @@ fun SettingsScreen(
                     legacyPathInput = TextFieldValue(m.detectedLegacyPath)
                 }
             }
+            launch {
+                keepOnUninstall = client.isKeepOnUninstallEnabled()
+            }
         }
     }
 
@@ -149,6 +159,33 @@ fun SettingsScreen(
         contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item {
+            ContentCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionTitle(text = "界面外观主题")
+                    Text(
+                        text = "选择应用显示配色风格，支持浅色、深色及跟随系统夜间模式",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ThemeMode.values().forEach { mode ->
+                            FilterChip(
+                                selected = themeMode == mode,
+                                onClick = { onThemeModeChanged(mode) },
+                                label = { Text(mode.title, style = MaterialTheme.typography.bodySmall) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             SectionTitle(text = "系统与服务信息")
         }
@@ -263,6 +300,52 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("保存设置")
+                }
+            }
+        }
+
+        item {
+            ContentCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionTitle(text = "模块卸载与数据保护")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "卸载模块时保留数据",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "在数据目录创建 KEEP_ON_UNINSTALL，卸载 Magisk/KernelSU 模块时跳过删除数据目录",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Switch(
+                            checked = keepOnUninstall,
+                            enabled = !isUpdatingKeepState,
+                            onCheckedChange = { checked ->
+                                scope.launch {
+                                    isUpdatingKeepState = true
+                                    client.setKeepOnUninstallEnabled(checked)
+                                        .onSuccess {
+                                            keepOnUninstall = checked
+                                            onShowMessage(if (checked) "已开启：卸载模块时保留数据" else "已关闭：卸载模块时将清除数据")
+                                        }
+                                        .onFailure {
+                                            onShowMessage("设置失败: ${it.message}")
+                                        }
+                                    isUpdatingKeepState = false
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }

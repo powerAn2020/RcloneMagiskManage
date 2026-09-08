@@ -199,9 +199,11 @@ pub struct MountIn {
     pub cache_mode: Option<String>,
     pub cache_max_size: Option<String>,
     pub cache_max_age: Option<String>,
+    pub target_package: Option<String>,
+    pub isolated: Option<bool>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Mount {
     pub id: String,
@@ -218,6 +220,9 @@ pub struct Mount {
     pub cache_max_size: String,
     pub cache_max_age: String,
     pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_package: Option<String>,
+    pub isolated: bool,
 }
 
 #[derive(Deserialize)]

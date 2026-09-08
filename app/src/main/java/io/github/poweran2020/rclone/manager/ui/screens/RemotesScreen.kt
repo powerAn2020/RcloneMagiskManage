@@ -1,5 +1,7 @@
 package io.github.poweran2020.rclone.manager.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -585,32 +587,26 @@ fun RemoteFormDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    popularTypes.take(4).forEach { pType ->
+                    popularTypes.forEach { pType ->
                         FilterChip(
                             selected = type.equals(pType, ignoreCase = true),
                             onClick = {
                                 type = pType
                                 optionErrors.clear()
                             },
-                            label = { Text(pType, style = MaterialTheme.typography.labelSmall) }
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    popularTypes.drop(4).forEach { pType ->
-                        FilterChip(
-                            selected = type.equals(pType, ignoreCase = true),
-                            onClick = {
-                                type = pType
-                                optionErrors.clear()
-                            },
-                            label = { Text(pType, style = MaterialTheme.typography.labelSmall) }
+                            label = {
+                                Text(
+                                    text = pType,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         )
                     }
                 }

@@ -138,7 +138,9 @@ pub async fn signed_request(
         if s.require_signature
             && !matches!(
                 parts.uri.path(),
-                "/api/v1/security/pairing/start" | "/api/v1/security/pairing/complete"
+                "/api/v1/security/pairing/start"
+                    | "/api/v1/security/pairing/complete"
+                    | "/api/v1/security/pairing/cancel"
             )
         {
             return GatewayError::Message("AUTH signed request required on LAN".into())

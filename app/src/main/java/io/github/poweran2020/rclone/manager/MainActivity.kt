@@ -3,6 +3,9 @@ package io.github.poweran2020.rclone.manager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import io.github.poweran2020.rclone.manager.data.AppPreferences
+import io.github.poweran2020.rclone.manager.data.ThemeMode
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -68,23 +71,33 @@ class MainActivity : ComponentActivity() {
     private val client = GatewayClient()
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var tokenStore: TokenStore
+    private lateinit var appPreferences: AppPreferences
     private val tokenState = mutableStateOf("")
     private val rootStatusState = mutableStateOf(RootStatus.CHECKING)
+    private val themeModeState = mutableStateOf(ThemeMode.SYSTEM)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        appPreferences = AppPreferences(this)
+        themeModeState.value = appPreferences.getThemeMode()
         tokenStore = TokenStore(this)
         tokenState.value = tokenStore.read()
 
         checkRootPermission(initial = true)
 
         setContent {
-            RcloneTheme {
+            RcloneTheme(themeMode = themeModeState.value) {
                 RcloneApp(
                     client = client,
                     tokenStore = tokenStore,
                     bearer = tokenState.value,
                     rootStatus = rootStatusState.value,
+                    themeMode = themeModeState.value,
+                    onThemeModeChanged = { newMode ->
+                        themeModeState.value = newMode
+                        appPreferences.setThemeMode(newMode)
+                    },
                     onRetryRoot = { checkRootPermission(forceRefresh = true) },
                     onOpenRootManager = { openRootManager() },
                     onExitApp = { finish() },
@@ -111,9 +124,14 @@ class MainActivity : ComponentActivity() {
                 if (forceRefresh) {
                     runCatching { Shell.getCachedShell()?.close() }
                 }
-                runCatching {
+                val hasRoot = runCatching {
                     Shell.getShell().isRoot
                 }.getOrDefault(false)
+                if (!hasRoot) {
+                    runCatching { client.health().isSuccess }.getOrDefault(false)
+                } else {
+                    true
+                }
             }
             rootStatusState.value = if (isRoot) RootStatus.GRANTED else RootStatus.DENIED
         }
@@ -153,6 +171,8 @@ private fun RcloneApp(
     tokenStore: TokenStore,
     bearer: String,
     rootStatus: RootStatus,
+    themeMode: ThemeMode,
+    onThemeModeChanged: (ThemeMode) -> Unit,
     onRetryRoot: () -> Unit,
     onOpenRootManager: () -> Unit,
     onExitApp: () -> Unit,
@@ -286,6 +306,8 @@ private fun RcloneApp(
                                 padding = PaddingValues(0.dp),
                                 client = client,
                                 bearer = bearer,
+                                themeMode = themeMode,
+                                onThemeModeChanged = onThemeModeChanged,
                                 onEditToken = { showTokenEditor = true },
                                 onShowMessage = showMessage
                             )

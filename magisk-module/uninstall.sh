@@ -22,4 +22,12 @@ if [ -f "$ROOT/runtime/gateway-watchdog.pid" ]; then
   esac
 fi
 rm -f "$ROOT/runtime/gateway.sock" "$ROOT/runtime/gateway.pid" "$ROOT/runtime/gateway-watchdog.pid"
-# Persistent DB, secrets, backups, and audit history intentionally remain.
+
+# Check if KEEP_ON_UNINSTALL flag exists in data directory
+if [ -f "$ROOT/KEEP_ON_UNINSTALL" ]; then
+  # Persistent DB, secrets, backups, and configs intentionally remain.
+  rm -f "$ROOT/KEEP_ON_UNINSTALL" 2>/dev/null || true
+else
+  # Thoroughly remove data directory if flag not set
+  rm -rf "$ROOT"
+fi

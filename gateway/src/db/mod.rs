@@ -26,6 +26,8 @@ pub fn open_db(root: &FsPath) -> Result<Db> {
     let _ = c.execute("ALTER TABLE job ADD COLUMN next_run_at INTEGER", []);
     let _ = c.execute("ALTER TABLE job ADD COLUMN max_runs INTEGER", []);
     let _ = c.execute("ALTER TABLE client ADD COLUMN token_expires_at INTEGER", []);
+    let _ = c.execute("ALTER TABLE mount_profile ADD COLUMN target_package TEXT", []);
+    let _ = c.execute("ALTER TABLE mount_profile ADD COLUMN isolated INTEGER NOT NULL DEFAULT 0", []);
     Ok(Arc::new(Mutex::new(c)))
 }
 

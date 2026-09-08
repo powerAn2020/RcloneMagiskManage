@@ -22,7 +22,7 @@ pub async fn mounts(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Vec<
     let client = scope(&h, &s, "mount.read")?;
     let c = db(&s)?;
     let mut st = c.prepare(
-        "SELECT mp.id,mp.name,mp.remote_id,r.name,mp.remote_path,mp.mount_point,mp.cache_dir,mp.status,mp.pid,mp.read_only,mp.cache_mode,mp.cache_max_size,mp.cache_max_age,mp.enabled FROM mount_profile mp LEFT JOIN remote r ON mp.remote_id=r.id ORDER BY mp.created_at",
+        "SELECT mp.id,mp.name,mp.remote_id,r.name,mp.remote_path,mp.mount_point,mp.cache_dir,mp.status,mp.pid,mp.read_only,mp.cache_mode,mp.cache_max_size,mp.cache_max_age,mp.enabled,mp.target_package,mp.isolated FROM mount_profile mp LEFT JOIN remote r ON mp.remote_id=r.id ORDER BY mp.created_at",
     )?;
     let rows = st
         .query_map([], |r| {
@@ -41,6 +41,8 @@ pub async fn mounts(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Vec<
                 cache_max_size: r.get(11)?,
                 cache_max_age: r.get(12)?,
                 enabled: r.get::<_, i64>(13)? != 0,
+                target_package: r.get(14)?,
+                isolated: r.get::<_, i64>(15).unwrap_or(0) != 0,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -61,6 +63,17 @@ pub async fn mount_create(
     let c = scope(&h, &s, "mount.write")?;
     validate_identity(&i.name, "mount name", 128)?;
     valid_mount(&i.mount_point)?;
+    if let Some(ref pkg) = i.target_package {
+        if !crate::security::is_valid_package_name(pkg) {
+            return Err(GatewayError::Message(
+                "invalid target package name".into(),
+            ));
+        }
+    }
+    let is_isolated = i.isolated.unwrap_or(false)
+        || i.target_package.is_some()
+        || i.mount_point.starts_with("/data/data/")
+        || i.mount_point.starts_with("/data/user/0/");
     let conflict: Option<String> = db(&s)?.query_row(
         "SELECT id FROM mount_profile WHERE mount_point=? AND status IN ('STARTING','RUNNING','STOPPING')",
         params![i.mount_point],
@@ -107,8 +120,8 @@ pub async fn mount_create(
     let id = Uuid::new_v4().to_string();
     let t = now();
     db(&s)?.execute(
-        "INSERT INTO mount_profile(id,name,remote_id,remote_path,mount_point,cache_dir,read_only,cache_mode,cache_max_size,cache_max_age,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-        params![id, i.name, i.remote_id, remote_path, i.mount_point, cache_dir, i.read_only.unwrap_or(false) as i64, cache_mode, cache_max_size, cache_max_age, t, t],
+        "INSERT INTO mount_profile(id,name,remote_id,remote_path,mount_point,cache_dir,read_only,cache_mode,cache_max_size,cache_max_age,created_at,updated_at,target_package,isolated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        params![id, i.name, i.remote_id, remote_path, i.mount_point, cache_dir, i.read_only.unwrap_or(false) as i64, cache_mode, cache_max_size, cache_max_age, t, t, i.target_package, is_isolated as i64],
     )?;
     audit(
         &s,
@@ -183,7 +196,16 @@ pub async fn mount_action(
                 return Err(error);
             }
         };
-        if let Err(error) = fs::create_dir_all(&m.mount_point) {
+        let is_isolated = m.isolated
+            || m.target_package.is_some()
+            || m.mount_point.starts_with("/data/data/")
+            || m.mount_point.starts_with("/data/user/0/");
+        let pkg = m
+            .target_package
+            .clone()
+            .or_else(|| crate::engine::extract_package_from_path(&m.mount_point));
+        let uid_gid = pkg.as_deref().and_then(crate::engine::resolve_package_uid_gid);
+        if let Err(error) = crate::engine::ensure_mount_directory(&m.mount_point, uid_gid) {
             reset_mount_start(&s, &id);
             return Err(error.into());
         }
@@ -229,6 +251,12 @@ pub async fn mount_action(
         {
             command.arg("--allow-non-empty");
             command.arg("--allow-other");
+            if let Some((uid, gid)) = uid_gid {
+                command.arg("--uid").arg(uid.to_string());
+                command.arg("--gid").arg(gid.to_string());
+                command.arg("--dir-perms").arg("0700");
+                command.arg("--file-perms").arg("0600");
+            }
         }
         let child = match command.spawn() {
             Ok(child) => child,
@@ -244,7 +272,9 @@ pub async fn mount_action(
                 "UPDATE mount_profile SET status='RUNNING',pid=?,updated_at=? WHERE id=?",
                 params![pid as i64, now(), id],
             )?;
-            tokio::spawn(bind_mount_when_ready(m.mount_point.clone()));
+            if !is_isolated {
+                tokio::spawn(bind_mount_when_ready(m.mount_point.clone()));
+            }
             let monitor_state = s.clone();
             let monitor_id = id.clone();
             let monitor_point = m.mount_point.clone();
@@ -257,11 +287,17 @@ pub async fn mount_action(
                         params![now(), monitor_id, pid as i64],
                     );
                 }
-                unmount_derived_bind(&monitor_point);
+                if !is_isolated {
+                    unmount_derived_bind(&monitor_point);
+                }
                 remove_mount_config(&monitor_state.root, &monitor_id);
             });
         }
     } else if let Some(pid) = m.pid {
+        let is_isolated = m.isolated
+            || m.target_package.is_some()
+            || m.mount_point.starts_with("/data/data/")
+            || m.mount_point.starts_with("/data/user/0/");
         let _ = process_kill_command()
             .args(["-TERM", &pid.to_string()])
             .status();
@@ -270,15 +306,23 @@ pub async fn mount_action(
             "UPDATE mount_profile SET status='STOPPED',pid=NULL,updated_at=? WHERE id=?",
             params![now(), id],
         )?;
-        unmount_derived_bind(&m.mount_point);
+        if !is_isolated {
+            unmount_derived_bind(&m.mount_point);
+        }
         let _ = fs::remove_file(s.root.join("runtime").join(format!("mount-{id}.conf")));
     } else if a == "stop" {
+        let is_isolated = m.isolated
+            || m.target_package.is_some()
+            || m.mount_point.starts_with("/data/data/")
+            || m.mount_point.starts_with("/data/user/0/");
         let conn = db(&s)?;
         conn.execute(
             "UPDATE mount_profile SET status='STOPPED',pid=NULL,updated_at=? WHERE id=?",
             params![now(), id],
         )?;
-        unmount_derived_bind(&m.mount_point);
+        if !is_isolated {
+            unmount_derived_bind(&m.mount_point);
+        }
         remove_mount_config(&s.root, &id);
     }
     audit(
@@ -408,9 +452,22 @@ pub async fn mount_update(
     }
     let cache_max_age = i.cache_max_age.clone().unwrap_or_else(|| "36h".into());
 
+    if let Some(ref pkg) = i.target_package {
+        if !crate::security::is_valid_package_name(pkg) {
+            return Err(GatewayError::Message(
+                "invalid target package name".into(),
+            ));
+        }
+    }
+    let is_isolated = i.isolated.unwrap_or(m.isolated)
+        || i.target_package.is_some()
+        || i.mount_point.starts_with("/data/data/")
+        || i.mount_point.starts_with("/data/user/0/");
+    let target_package = i.target_package.or(m.target_package);
+
     let t = now();
     db(&s)?.execute(
-        "UPDATE mount_profile SET name=?, remote_id=?, remote_path=?, mount_point=?, cache_dir=?, read_only=?, cache_mode=?, cache_max_size=?, cache_max_age=?, updated_at=? WHERE id=?",
+        "UPDATE mount_profile SET name=?, remote_id=?, remote_path=?, mount_point=?, cache_dir=?, read_only=?, cache_mode=?, cache_max_size=?, cache_max_age=?, updated_at=?, target_package=?, isolated=? WHERE id=?",
         params![
             i.name,
             i.remote_id,
@@ -422,6 +479,8 @@ pub async fn mount_update(
             cache_max_size,
             cache_max_age,
             t,
+            target_package,
+            is_isolated as i64,
             id
         ],
     )?;

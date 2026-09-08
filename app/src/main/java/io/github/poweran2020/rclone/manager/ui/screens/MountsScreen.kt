@@ -65,7 +65,31 @@ import io.github.poweran2020.rclone.manager.ui.component.MaterialTextField
 import io.github.poweran2020.rclone.manager.ui.component.PathPickerDialog
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -154,7 +178,22 @@ fun MountsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(mount.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(mount.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                if (mount.isolated || mount.targetPackage != null) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "应用隔离",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
                             Text(
                                 "挂载点: ${mount.mountPoint}",
                                 style = MaterialTheme.typography.bodySmall,
@@ -168,7 +207,9 @@ fun MountsScreen(
                         ?: remotes.find { it.id == mount.remoteId }?.name
                         ?: mount.remoteId
                     InfoRow(label = "远端源", value = "${remoteDisplayName}:${mount.remotePath}")
-                    if (mount.mountPoint.startsWith("/mnt/rclone-")) {
+                    if (mount.isolated || mount.targetPackage != null) {
+                        InfoRow(label = "隔离目标", value = mount.targetPackage ?: "专属沙盒私有目录 (Non-Broadcast)")
+                    } else if (mount.mountPoint.startsWith("/mnt/rclone-")) {
                         InfoRow(label = "Bind 共享路径", value = "/data/media/0/${mount.name}")
                     } else {
                         InfoRow(label = "挂载类型", value = "直接挂载 (${mount.mountPoint})")
@@ -277,9 +318,9 @@ fun MountsScreen(
             client = client,
             bearer = bearer,
             onDismiss = { showCreateDialog = false },
-            onSubmit = { name, remoteId, remotePath, mountPoint, readOnly, mode, size, age ->
+            onSubmit = { name, remoteId, remotePath, mountPoint, readOnly, mode, size, age, targetPackage, isolated ->
                 scope.launch {
-                    client.createMount(name, remoteId, mountPoint, bearer, remotePath, null, readOnly, mode, size, age).fold(
+                    client.createMount(name, remoteId, mountPoint, bearer, remotePath, null, readOnly, mode, size, age, targetPackage, isolated).fold(
                         onSuccess = {
                             onShowMessage("挂载配置创建成功")
                             showCreateDialog = false
@@ -300,7 +341,7 @@ fun MountsScreen(
             client = client,
             bearer = bearer,
             onDismiss = { mountToEdit = null },
-            onSubmit = { name, remoteId, remotePath, mountPoint, readOnly, mode, size, age ->
+            onSubmit = { name, remoteId, remotePath, mountPoint, readOnly, mode, size, age, targetPackage, isolated ->
                 scope.launch {
                     client.updateMount(
                         id = editTarget.id,
@@ -313,7 +354,9 @@ fun MountsScreen(
                         readOnly = readOnly,
                         cacheMode = mode,
                         cacheMaxSize = size,
-                        cacheMaxAge = age
+                        cacheMaxAge = age,
+                        targetPackage = targetPackage,
+                        isolated = isolated
                     ).fold(
                         onSuccess = {
                             onShowMessage("挂载配置已成功更新")
@@ -369,13 +412,16 @@ fun MountEditDialog(
     client: GatewayClient,
     bearer: String,
     onDismiss: () -> Unit,
-    onSubmit: (name: String, remoteId: String, remotePath: String, mountPoint: String, readOnly: Boolean, mode: String, size: String, age: String) -> Unit
+    onSubmit: (name: String, remoteId: String, remotePath: String, mountPoint: String, readOnly: Boolean, mode: String, size: String, age: String, targetPackage: String?, isolated: Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf(TextFieldValue(initialMount?.name ?: "")) }
     var selectedRemoteId by remember { mutableStateOf(initialMount?.remoteId ?: (remotes.firstOrNull()?.id ?: "")) }
     var remotePath by remember { mutableStateOf(TextFieldValue(initialMount?.remotePath ?: "/")) }
     var mountPoint by remember { mutableStateOf(TextFieldValue(initialMount?.mountPoint ?: "")) }
     var isCustomMountPoint by remember { mutableStateOf(initialMount != null) }
+    var isIsolated by remember { mutableStateOf(initialMount?.isolated ?: (initialMount?.targetPackage != null)) }
+    var targetPackage by remember { mutableStateOf(TextFieldValue(initialMount?.targetPackage ?: "")) }
+    var showAppPicker by remember { mutableStateOf(false) }
     var cacheMode by remember { mutableStateOf(initialMount?.cacheMode ?: "full") }
     var cacheMaxSize by remember { mutableStateOf(TextFieldValue(initialMount?.cacheMaxSize ?: "32G")) }
     var cacheMaxAge by remember { mutableStateOf(TextFieldValue(initialMount?.cacheMaxAge ?: "36h")) }
@@ -404,11 +450,84 @@ fun MountEditDialog(
                         name = it
                         if (!isCustomMountPoint && initialMount == null) {
                             val trimmed = it.text.trim()
-                            mountPoint = TextFieldValue(if (trimmed.isNotBlank()) "/mnt/rclone-$trimmed" else "")
+                            if (isIsolated) {
+                                val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
+                                mountPoint = TextFieldValue(if (trimmed.isNotBlank()) "/data/data/$pkg/files/rclone/$trimmed" else "")
+                            } else {
+                                mountPoint = TextFieldValue(if (trimmed.isNotBlank()) "/mnt/rclone-$trimmed" else "")
+                            }
                         }
                     },
                     label = "Profile 名称 (英文标识符)"
                 )
+
+                // Visibility & Isolation Mode Selector
+                Text("挂载模式", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = !isIsolated,
+                        onClick = {
+                            isIsolated = false
+                            if (mountPoint.text.startsWith("/data/data/") || mountPoint.text.startsWith("/data/user/0/")) {
+                                val trimmed = name.text.trim().ifBlank { "mount" }
+                                mountPoint = TextFieldValue("/mnt/rclone-$trimmed")
+                            }
+                        },
+                        label = { Text("全局通用挂载") },
+                        leadingIcon = if (!isIsolated) { { Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(16.dp)) } } else null,
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = isIsolated,
+                        onClick = {
+                            isIsolated = true
+                            val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
+                            val trimmed = name.text.trim().ifBlank { "mount" }
+                            if (mountPoint.text.isBlank() || mountPoint.text.startsWith("/mnt/rclone-") || mountPoint.text.startsWith("/sdcard/") || mountPoint.text.startsWith("/storage/")) {
+                                mountPoint = TextFieldValue("/data/data/$pkg/files/rclone/$trimmed")
+                            }
+                        },
+                        label = { Text("应用专属隔离") },
+                        leadingIcon = if (isIsolated) { { Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(16.dp)) } } else null,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (isIsolated) {
+                    OutlinedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("应用沙盒隔离配置", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "直接挂载至目标 App 专属私有目录，仅该 App 进程享有读写权限，不向全局公共存储广播。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = targetPackage,
+                                onValueChange = {
+                                    targetPackage = it
+                                    val pkg = it.text.trim().ifBlank { "com.example.app" }
+                                    val trimmed = name.text.trim().ifBlank { "mount" }
+                                    mountPoint = TextFieldValue("/data/data/$pkg/files/rclone/$trimmed")
+                                },
+                                label = { Text("目标应用包名 (Package Name)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                trailingIcon = {
+                                    IconButton(onClick = { showAppPicker = true }) {
+                                        Icon(Icons.Default.Apps, contentDescription = "选择已安装应用", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                },
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                            )
+                        }
+                    }
+                }
 
                 // Remote selector
                 ExposedDropdownMenuBox(
@@ -488,11 +607,20 @@ fun MountEditDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val trimmedName = name.text.trim().ifBlank { "name" }
-                    val presets = listOf(
-                        "/mnt/rclone-$trimmedName" to "默认 (/mnt)",
-                        "/sdcard/$trimmedName" to "内部存储",
-                        "/storage/emulated/0/$trimmedName" to "标准存储"
-                    )
+                    val presets = if (isIsolated) {
+                        val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
+                        listOf(
+                            "/data/data/$pkg/files/rclone/$trimmedName" to "files/rclone",
+                            "/data/data/$pkg/files/$trimmedName" to "files (根)",
+                            "/data/data/$pkg/cache/rclone/$trimmedName" to "cache/rclone"
+                        )
+                    } else {
+                        listOf(
+                            "/mnt/rclone-$trimmedName" to "默认 (/mnt)",
+                            "/sdcard/$trimmedName" to "内部存储",
+                            "/storage/emulated/0/$trimmedName" to "标准存储"
+                        )
+                    }
                     presets.forEach { (path, label) ->
                         OutlinedButton(
                             onClick = {
@@ -508,9 +636,20 @@ fun MountEditDialog(
                 }
 
                 val currentMountPoint = mountPoint.text.trim().ifBlank {
-                    if (name.text.isNotBlank()) "/mnt/rclone-${name.text.trim()}" else ""
+                    if (isIsolated) {
+                        val pkg = targetPackage.text.trim().ifBlank { "<package>" }
+                        "/data/data/$pkg/files/rclone/${name.text.trim().ifBlank { "mount" }}"
+                    } else {
+                        if (name.text.isNotBlank()) "/mnt/rclone-${name.text.trim()}" else ""
+                    }
                 }
-                if (currentMountPoint.startsWith("/mnt/rclone-")) {
+                if (isIsolated) {
+                    Text(
+                        "提示: 专属隔离挂载仅对目标应用沙盒可见，不会向系统公共存储 (/data/media/0/*) 广播。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                } else if (currentMountPoint.startsWith("/mnt/rclone-")) {
                     Text(
                         "提示: /mnt/rclone-* 会由 Magisk 自动创建 /data/media/0/${name.text.trim().ifBlank { "<name>" }} 的 bind 共享映射",
                         style = MaterialTheme.typography.bodySmall,
@@ -576,7 +715,15 @@ fun MountEditDialog(
                 onClick = {
                     val n = name.text.trim()
                     if (n.isBlank() || selectedRemoteId.isBlank()) return@Button
-                    val mp = mountPoint.text.trim().ifBlank { "/mnt/rclone-$n" }
+                    val mp = mountPoint.text.trim().ifBlank {
+                        if (isIsolated) {
+                            val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
+                            "/data/data/$pkg/files/rclone/$n"
+                        } else {
+                            "/mnt/rclone-$n"
+                        }
+                    }
+                    val tp = if (isIsolated) targetPackage.text.trim().ifBlank { null } else null
                     onSubmit(
                         n,
                         selectedRemoteId,
@@ -585,7 +732,9 @@ fun MountEditDialog(
                         readOnly,
                         cacheMode,
                         cacheMaxSize.text.trim().ifBlank { "32G" },
-                        cacheMaxAge.text.trim().ifBlank { "36h" }
+                        cacheMaxAge.text.trim().ifBlank { "36h" },
+                        tp,
+                        isIsolated
                     )
                 }
             ) {
@@ -596,6 +745,19 @@ fun MountEditDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
+
+    if (showAppPicker) {
+        AppPickerDialog(
+            onDismiss = { showAppPicker = false },
+            onSelect = { pkg ->
+                targetPackage = TextFieldValue(pkg)
+                val trimmed = name.text.trim().ifBlank { "mount" }
+                mountPoint = TextFieldValue("/data/data/$pkg/files/rclone/$trimmed")
+                isCustomMountPoint = true
+                showAppPicker = false
+            }
+        )
+    }
 
     if (showRemotePathPicker) {
         val selectedRemote = remotes.find { it.id == selectedRemoteId }
@@ -633,4 +795,143 @@ fun MountEditDialog(
             }
         )
     }
+}
+
+data class InstalledAppItem(
+    val name: String,
+    val packageName: String,
+    val icon: Drawable? = null
+)
+
+fun drawableToBitmap(drawable: Drawable, width: Int = 96, height: Int = 96): Bitmap {
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    drawable.setBounds(0, 0, canvas.width, canvas.height)
+    drawable.draw(canvas)
+    return bitmap
+}
+
+@Composable
+fun AppPickerDialog(
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    var apps by remember { mutableStateOf<List<InstalledAppItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val pm = context.packageManager
+            val list = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                .map { appInfo ->
+                    InstalledAppItem(
+                        name = appInfo.loadLabel(pm).toString(),
+                        packageName = appInfo.packageName,
+                        icon = runCatching { appInfo.loadIcon(pm) }.getOrNull()
+                    )
+                }
+                .sortedWith(compareBy({ it.packageName.startsWith("android") || it.packageName.startsWith("com.android") }, { it.name.lowercase() }))
+            withContext(Dispatchers.Main) {
+                apps = list
+                loading = false
+            }
+        }
+    }
+
+    val filteredApps = remember(query, apps) {
+        if (query.isBlank()) apps else {
+            val q = query.trim().lowercase()
+            apps.filter { it.name.lowercase().contains(q) || it.packageName.lowercase().contains(q) }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择目标应用 (App)") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(420.dp)
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("搜索应用名称或包名") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
+                )
+                Spacer(Modifier.height(8.dp))
+                if (loading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (filteredApps.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "未找到相关应用",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(filteredApps, key = { it.packageName }) { app ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelect(app.packageName) }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (app.icon != null) {
+                                    val bmp = remember(app.packageName) {
+                                        runCatching { drawableToBitmap(app.icon) }.getOrNull()
+                                    }
+                                    if (bmp != null) {
+                                        Image(
+                                            bitmap = bmp.asImageBitmap(),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(36.dp)
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.Android, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                } else {
+                                    Icon(Icons.Default.Android, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        app.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        app.packageName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }

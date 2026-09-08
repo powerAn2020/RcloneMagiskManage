@@ -33,6 +33,12 @@ use crate::types::*;
         assert!(valid_mount("/mnt/custom").is_ok());
         assert!(valid_mount("/sdcard/my_cloud").is_ok());
         assert!(valid_mount("/storage/emulated/0/my_cloud").is_ok());
+        assert!(valid_mount("/data/data/com.example.app/files/cloud").is_ok());
+        assert!(valid_mount("/data/user/0/com.example.app/files/cloud").is_ok());
+        assert!(valid_mount("/data/data/com.example.app/cache/cloud").is_ok());
+        assert!(valid_mount("/data/data/invalid/files/cloud").is_err());
+        assert!(valid_mount("/data/data/com.example.app/system").is_err());
+        assert!(valid_mount("/data/data/com.example.app/files/../bad").is_err());
         assert!(valid_mount("/mnt/rclone-").is_err());
         assert!(valid_mount("/system/bin").is_err());
         assert!(valid_mount("/mnt/rclone-../escape").is_err());
@@ -46,6 +52,8 @@ use crate::types::*;
         );
         assert!(derived_bind_target("/mnt/rclone-a/b").is_none());
         assert!(derived_bind_target("/data/media/0/drive").is_none());
+        assert!(derived_bind_target("/data/data/com.example.app/files/cloud").is_none());
+        assert!(derived_bind_target("/data/user/0/com.example.app/files/cloud").is_none());
     }
     #[test]
     fn cache_path_check_is_component_aware() {
@@ -1230,6 +1238,8 @@ info line"#,
                 cache_mode: Some("writes".into()),
                 cache_max_size: Some("4G".into()),
                 cache_max_age: Some("12h".into()),
+                target_package: None,
+                isolated: None,
             }),
         )
         .await
@@ -1269,6 +1279,8 @@ info line"#,
                 cache_mode: Some("full".into()),
                 cache_max_size: Some("8G".into()),
                 cache_max_age: Some("24h".into()),
+                target_package: None,
+                isolated: None,
             }),
         )
         .await
@@ -1299,6 +1311,32 @@ info line"#,
             .await
             .is_err()
         );
+
+        // Test isolated app mount creation
+        let isolated_mount = mount_create(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Json(MountIn {
+                name: "isolated_app_mount".into(),
+                remote_id: remote_id.clone(),
+                remote_path: Some("/data".into()),
+                mount_point: "/data/data/com.example.testapp/files/rclone/mount1".into(),
+                cache_dir: None,
+                read_only: Some(false),
+                cache_mode: Some("writes".into()),
+                cache_max_size: Some("2G".into()),
+                cache_max_age: Some("6h".into()),
+                target_package: Some("com.example.testapp".into()),
+                isolated: Some(true),
+            }),
+        )
+        .await
+        .unwrap()
+        .1
+        .0;
+        assert_eq!(isolated_mount.name, "isolated_app_mount");
+        assert_eq!(isolated_mount.target_package, Some("com.example.testapp".to_string()));
+        assert!(isolated_mount.isolated);
 
         let _ = fs::remove_dir_all(&state.root);
     }
@@ -1397,4 +1435,58 @@ info line"#,
 
         let _ = fs::remove_dir_all(&state.root);
     }
+
+    #[tokio::test]
+    async fn pairing_lifecycle_start_cancel_and_complete() {
+        let root = std::env::temp_dir().join(format!("rclone-gateway-pair-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+
+        // 1. Start pairing -> generates code
+        let (_, Json(start_res)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
+        let code = start_res["pairingCode"].as_str().unwrap().to_string();
+        assert_eq!(code.len(), 6);
+        assert!(state.pairing.read().await.contains_key(&code));
+
+        // 2. Cancel pairing by code
+        let (_, Json(cancel_res)) = pair_cancel(
+            axum::extract::State(state.clone()),
+            Some(axum::extract::Json(serde_json::json!({ "pairingCode": code }))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(cancel_res["success"], true);
+        assert_eq!(cancel_res["cancelledCount"], 1);
+        assert!(!state.pairing.read().await.contains_key(&code));
+
+        // 3. Attempt to complete with cancelled code -> should fail
+        let complete_res = pair_complete(
+            axum::extract::State(state.clone()),
+            axum::extract::Json(Pair {
+                pairing_code: code.clone(),
+                client_name: "test-client".into(),
+                public_key: Some("test-key".into()),
+                package_name: None,
+            }),
+        )
+        .await;
+        assert!(complete_res.is_err());
+
+        // 4. Test cancel all (None body)
+        let (_, Json(start_res2)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
+        let code2 = start_res2["pairingCode"].as_str().unwrap().to_string();
+        assert!(state.pairing.read().await.contains_key(&code2));
+
+        let (_, Json(cancel_all_res)) = pair_cancel(axum::extract::State(state.clone()), None).await.unwrap();
+        assert_eq!(cancel_all_res["cancelledCount"], 1);
+        assert!(state.pairing.read().await.is_empty());
+
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
 

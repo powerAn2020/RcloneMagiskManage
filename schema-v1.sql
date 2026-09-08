@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS mount_profile (
   pid INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  target_package TEXT,
+  isolated INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY(remote_id) REFERENCES remote(id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS idx_mount_enabled ON mount_profile(enabled);

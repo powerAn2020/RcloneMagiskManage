@@ -24,6 +24,46 @@ pub async fn pair_start(State(s): State<AppState>) -> Result<(StatusCode, Json<s
     ))
 }
 
+pub async fn pair_cancel(
+    State(s): State<AppState>,
+    body: Option<Json<serde_json::Value>>,
+) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    let code_opt = body.and_then(|Json(b)| {
+        b.get("pairingCode")
+            .or_else(|| b.get("pairing_code"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    });
+
+    let mut lock = s.pairing.write().await;
+    let removed_count = if let Some(code) = code_opt {
+        if lock.remove(&code).is_some() { 1 } else { 0 }
+    } else {
+        let count = lock.len();
+        lock.clear();
+        count
+    };
+    drop(lock);
+
+    let _ = audit(
+        &s,
+        None,
+        "security.pairing.cancel",
+        None,
+        None,
+        "SUCCESS",
+        None,
+    );
+
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "cancelledCount": removed_count
+        })),
+    ))
+}
+
 pub async fn pair_complete(
     State(s): State<AppState>,
     Json(i): Json<Pair>,

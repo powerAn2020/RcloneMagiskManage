@@ -54,6 +54,7 @@ pub fn app_router(s: AppState) -> Router {
         .route("/api/v1/system/logs/clear", post(logs_clear))
         .route("/api/v1/security/pairing/start", post(pair_start))
         .route("/api/v1/security/pairing/complete", post(pair_complete))
+        .route("/api/v1/security/pairing/cancel", post(pair_cancel))
         .route("/api/v1/security/clients", get(clients))
         .route(
             "/api/v1/security/clients/{id}",

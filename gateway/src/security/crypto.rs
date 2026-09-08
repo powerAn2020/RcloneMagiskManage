@@ -243,6 +243,53 @@ pub fn valid_path(path: &str, prefix: &str) -> Result<String> {
     Ok(n)
 }
 
+pub fn is_valid_package_name(pkg: &str) -> bool {
+    if pkg.is_empty() || pkg.len() > 128 {
+        return false;
+    }
+    let parts: Vec<&str> = pkg.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    for part in parts {
+        if part.is_empty() {
+            return false;
+        }
+        let first = part.as_bytes()[0];
+        if !first.is_ascii_alphabetic() && first != b'_' {
+            return false;
+        }
+        if !part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            return false;
+        }
+    }
+    true
+}
+
+pub fn is_valid_app_private_mount(p: &str) -> bool {
+    let sub = if let Some(sub) = p.strip_prefix("/data/data/") {
+        sub
+    } else if let Some(sub) = p.strip_prefix("/data/user/0/") {
+        sub
+    } else {
+        return false;
+    };
+    let Some((pkg, rest)) = sub.split_once('/') else {
+        return false;
+    };
+    if !is_valid_package_name(pkg) {
+        return false;
+    }
+    // Must be within files/ or cache/ and have a sub-path
+    if let Some(after_files) = rest.strip_prefix("files/") {
+        !after_files.trim_matches('/').is_empty()
+    } else if let Some(after_cache) = rest.strip_prefix("cache/") {
+        !after_cache.trim_matches('/').is_empty()
+    } else {
+        false
+    }
+}
+
 pub fn valid_mount(p: &str) -> Result<()> {
     if p.contains("..") || p.bytes().any(|b| b < 0x20) {
         return Err(GatewayError::Message(
@@ -267,9 +314,9 @@ pub fn valid_mount(p: &str) -> Result<()> {
     } else {
         false
     };
-    if !valid_root {
+    if !valid_root && !is_valid_app_private_mount(p) {
         return Err(GatewayError::Message(
-            "PATH_DENIED: mount destination must reside under /mnt/rclone-*, /mnt/*, /sdcard/*, /storage/*, or /data/media/0/*"
+            "PATH_DENIED: mount destination must reside under /mnt/rclone-*, /mnt/*, /sdcard/*, /storage/*, /data/media/0/*, or /data/data/<pkg>/files/*"
                 .into(),
         ));
     }
@@ -302,6 +349,7 @@ pub fn allowed_request(method: &str, path: &str) -> bool {
             | ("POST", "/api/v1/system/logs/clear")
             | ("POST", "/api/v1/security/pairing/start")
             | ("POST", "/api/v1/security/pairing/complete")
+            | ("POST", "/api/v1/security/pairing/cancel")
             | ("GET", "/api/v1/security/clients")
             | ("GET", "/api/v1/remotes")
             | ("POST", "/api/v1/remotes")

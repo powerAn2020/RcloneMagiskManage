@@ -29,7 +29,11 @@ if (-not (Test-Path $modDir)) {
 if ($RestartService) {
     Write-Host ">>> Restarting Gateway daemon..."
     & $adb -s $DeviceId shell "nohup sh /data/adb/modules/rclone-manager/service.sh </dev/null >/dev/null 2>&1 &"
-    Start-Sleep -Seconds 1
+    Start-Sleep -Seconds 2
 }
+
+# 5. Fix directory and socket permissions for emulator / testing access
+& $adb -s $DeviceId shell "chmod 755 /data/adb /data/adb/modules && chmod 777 /data/adb/rclone-manage /data/adb/rclone-manage/runtime 2>/dev/null || true"
+& $adb -s $DeviceId shell "chmod 666 /data/adb/rclone-manage/runtime/gateway.sock 2>/dev/null || true"
 
 Write-Host ">>> Deployment complete!"
