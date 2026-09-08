@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path as FsPath;
 use std::sync::Arc;
+use axum::Json;
 use axum::http::HeaderMap;
 use base64::Engine;
 use hmac::{Hmac, Mac};
@@ -1301,3 +1302,99 @@ info line"#,
 
         let _ = fs::remove_dir_all(&state.root);
     }
+
+    #[tokio::test]
+    async fn system_backups_restore_delete_and_migration_api() {
+        assert!(allowed_request("DELETE", "/api/v1/system/backups/state-123.db"));
+        assert!(allowed_request("POST", "/api/v1/system/backups/state-123.db/restore"));
+        assert!(allowed_request("POST", "/api/v1/system/migration"));
+        assert!(!allowed_request("DELETE", "/api/v1/system/backups/../escape.db"));
+
+        let root = std::env::temp_dir().join(format!("rclone-test-sys-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+
+        let token = "test_sys_token";
+        let token_h = hash(token);
+        let t = now();
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c_sys','test',?,'ACTIVE',?)",
+                params![token_h, t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c_sys','*','*',NULL)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        // 1. Create backup
+        let (status, Json(backup_meta)) = backup_create(axum::extract::State(state.clone()), h.clone()).await.unwrap();
+        assert_eq!(status, axum::http::StatusCode::CREATED);
+        let backup_path = backup_meta["path"].as_str().unwrap();
+        let backup_name = std::path::Path::new(backup_path).file_name().unwrap().to_str().unwrap().to_string();
+
+        // 2. List backups
+        let Json(list) = backups_list(axum::extract::State(state.clone()), h.clone()).await.unwrap();
+        assert!(list.iter().any(|b| b["name"] == backup_name));
+
+        // 3. Restore backup
+        let Json(restore_res) = backup_restore(
+            axum::extract::State(state.clone()),
+            axum::extract::Path(backup_name.clone()),
+            h.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(restore_res["status"], "success");
+
+        // 4. Delete backup
+        let Json(del_res) = backup_delete(
+            axum::extract::State(state.clone()),
+            axum::extract::Path(backup_name.clone()),
+            h.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(del_res["status"], "success");
+
+        // Verify deleted
+        assert!(!state.root.join("backups").join(&backup_name).exists());
+
+        // 5. Test migration status
+        let Json(mig_status) = migration_status(axum::extract::State(state.clone()), h.clone()).await.unwrap();
+        assert_eq!(mig_status["alreadyMigrated"], false);
+
+        // 6. Test migration run with legacy dir
+        let legacy_dir = root.join("legacy");
+        fs::create_dir_all(&legacy_dir).unwrap();
+        fs::write(legacy_dir.join("rclone.conf"), b"[testremote]\ntype=webdav\nendpoint=https://dav.test.com\n").unwrap();
+        let Json(mig_run_res) = migration_run(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            Some(axum::extract::Json(serde_json::json!({
+                "legacyPath": legacy_dir.to_str().unwrap()
+            }))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(mig_run_res["status"], "success");
+
+        // Verify alreadyMigrated becomes true
+        let Json(mig_status_after) = migration_status(axum::extract::State(state.clone()), h.clone()).await.unwrap();
+        assert_eq!(mig_status_after["alreadyMigrated"], true);
+
+        let _ = fs::remove_dir_all(&state.root);
+    }
+

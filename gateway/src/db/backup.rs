@@ -77,16 +77,19 @@ pub fn restore_backup(root: &FsPath, name: &str) -> Result<serde_json::Value> {
     if let Ok(pid_text) = fs::read_to_string(&pid_file) {
         let pid = pid_text.trim();
         if !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()) {
-            #[cfg(unix)]
-            {
-                let alive = process_kill_command()
-                    .args(["-0", pid])
-                    .status()
-                    .is_ok_and(|v| v.success());
-                if alive {
-                    return Err(GatewayError::Message(
-                        "gateway must be stopped before database restore".into(),
-                    ));
+            let current_pid = std::process::id().to_string();
+            if pid != current_pid {
+                #[cfg(unix)]
+                {
+                    let alive = process_kill_command()
+                        .args(["-0", pid])
+                        .status()
+                        .is_ok_and(|v| v.success());
+                    if alive {
+                        return Err(GatewayError::Message(
+                            "gateway must be stopped before database restore".into(),
+                        ));
+                    }
                 }
             }
         }

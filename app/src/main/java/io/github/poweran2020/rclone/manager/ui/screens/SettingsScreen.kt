@@ -1,5 +1,6 @@
 package io.github.poweran2020.rclone.manager.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,10 +14,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
@@ -27,8 +31,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,9 +65,11 @@ import io.github.poweran2020.rclone.manager.data.model.parseMigrationStatus
 import io.github.poweran2020.rclone.manager.data.model.parseSystemInfo
 import io.github.poweran2020.rclone.manager.data.model.parseSystemSettings
 import io.github.poweran2020.rclone.manager.ui.component.ContentCard
+import io.github.poweran2020.rclone.manager.ui.component.DangerousConfirmDialog
 import io.github.poweran2020.rclone.manager.ui.component.InfoRow
 import io.github.poweran2020.rclone.manager.ui.component.LoadingView
 import io.github.poweran2020.rclone.manager.ui.component.MaterialTextField
+import io.github.poweran2020.rclone.manager.ui.component.PathPickerDialog
 import io.github.poweran2020.rclone.manager.ui.component.PreferenceRow
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
@@ -90,6 +98,15 @@ fun SettingsScreen(
     var isClearingLogs by remember { mutableStateOf(false) }
     var showSafeModeWarning by remember { mutableStateOf(false) }
 
+    var backupToRestore by remember { mutableStateOf<BackupItem?>(null) }
+    var backupToDelete by remember { mutableStateOf<BackupItem?>(null) }
+    var showAllBackups by remember { mutableStateOf(false) }
+
+    var legacyPathInput by remember { mutableStateOf(TextFieldValue("")) }
+    var isMigrating by remember { mutableStateOf(false) }
+    var showMigrationErrorsDialog by remember { mutableStateOf(false) }
+    var showLegacyPathPicker by remember { mutableStateOf(false) }
+
     // Editable settings
     var logRetentionDays by remember { mutableStateOf(TextFieldValue("14")) }
     var logMaxBytes by remember { mutableStateOf(TextFieldValue("10485760")) }
@@ -111,7 +128,13 @@ fun SettingsScreen(
                 maxConcurrentJobs = TextFieldValue(s.maxConcurrentJobs.toString())
             }
             client.backups(bearer).onSuccess { backups = parseBackups(it) }
-            client.migrationStatus(bearer).onSuccess { migration = parseMigrationStatus(it) }
+            client.migrationStatus(bearer).onSuccess {
+                val m = parseMigrationStatus(it)
+                migration = m
+                if (legacyPathInput.text.isEmpty() && !m.detectedLegacyPath.isNullOrEmpty()) {
+                    legacyPathInput = TextFieldValue(m.detectedLegacyPath)
+                }
+            }
         }
     }
 
@@ -255,11 +278,18 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "SQLite WAL 状态备份",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "SQLite WAL 状态备份",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "支持数据库快照热备份与前置保护还原。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Button(
                         onClick = {
                             scope.launch {
@@ -278,6 +308,7 @@ fun SettingsScreen(
                         Text("立即备份")
                     }
                 }
+
                 if (backups.isEmpty()) {
                     Text(
                         "暂无备份文件。",
@@ -285,9 +316,57 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        backups.take(5).forEach { b ->
-                            InfoRow(label = b.name, value = "${formatBytes(b.size)} · ${formatEpochTime(b.timestamp)}")
+                    val displayed = if (showAllBackups) backups else backups.take(5)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        displayed.forEach { b ->
+                            ContentCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                insideMargin = PaddingValues(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(b.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                            if (b.bundle) {
+                                                StatusBadge(status = "带密钥")
+                                            }
+                                        }
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            "${formatBytes(b.size)} · ${formatEpochTime(b.timestamp)}${if (b.sha256.isNotEmpty()) " · SHA:" + b.sha256.take(8) else ""}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        OutlinedButton(
+                                            onClick = { backupToRestore = b },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("还原", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        Button(
+                                            onClick = { backupToDelete = b },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "删除", modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (backups.size > 5) {
+                            TextButton(
+                                onClick = { showAllBackups = !showAllBackups },
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            ) {
+                                Text(if (showAllBackups) "收起多余备份" else "查看全部备份 (${backups.size})")
+                            }
                         }
                     }
                 }
@@ -300,15 +379,119 @@ fun SettingsScreen(
 
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
-                migration?.let { m ->
-                    InfoRow(
-                        label = "上游旧配置迁移状态",
-                        value = if (m.alreadyMigrated) "已迁移 (完成)" else "尚未检测到迁移"
-                    )
-                    InfoRow(label = "成功转换任务数", value = "${m.migratedJobs} 个")
-                    InfoRow(label = "解析异常忽略数", value = "${m.errorCount} 条")
-                } ?: run {
-                    Text("正在查询配置迁移状态…", style = MaterialTheme.typography.bodySmall)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "旧版 Magisk 模块历史配置",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        migration?.let { m ->
+                            StatusBadge(
+                                status = if (m.alreadyMigrated) "已迁移完成" else if (!m.detectedLegacyPath.isNullOrEmpty()) "发现待迁移配置" else "未检测到配置"
+                            )
+                        }
+                    }
+
+                    migration?.let { m ->
+                        InfoRow(
+                            label = "自动探测路径",
+                            value = m.detectedLegacyPath ?: "未在常见模块目录找到配置"
+                        )
+                        InfoRow(label = "成功转换任务数", value = "${m.migratedJobs} 个")
+                        InfoRow(label = "解析异常/忽略记录", value = "${m.errorCount} 条")
+
+                        OutlinedTextField(
+                            value = legacyPathInput,
+                            onValueChange = { legacyPathInput = it },
+                            label = { Text("旧模块目录 (包含 rclone.conf / sync / copy)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                IconButton(onClick = { showLegacyPathPicker = true }) {
+                                    Icon(
+                                        Icons.Default.FolderOpen,
+                                        contentDescription = "浏览选择本地目录",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        Text("常见旧模块路径预设:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val detected = m.detectedLegacyPath
+                            if (!detected.isNullOrBlank()) {
+                                OutlinedButton(
+                                    onClick = { legacyPathInput = TextFieldValue(detected) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Text("探测目录: $detected", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            val presets = listOf(
+                                "/data/adb/modules/rclone" to "标准 rclone 模块",
+                                "/data/adb/modules" to "Magisk 模块目录",
+                                "/data/local/tmp/legacy_test" to "测试目录"
+                            )
+                            presets.forEach { (path, label) ->
+                                OutlinedButton(
+                                    onClick = { legacyPathInput = TextFieldValue(path) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Text(label, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    isMigrating = true
+                                    scope.launch {
+                                        client.runMigration(legacyPathInput.text.trim().ifEmpty { null }, bearer).fold(
+                                            onSuccess = {
+                                                onShowMessage("历史配置已成功迁移导入")
+                                                loadAllSettings()
+                                            },
+                                            onFailure = { onShowMessage("迁移失败: ${it.message}") }
+                                        )
+                                        isMigrating = false
+                                    }
+                                },
+                                enabled = !isMigrating && legacyPathInput.text.isNotBlank(),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(if (isMigrating) "正在迁移…" else if (m.alreadyMigrated) "重新/增量迁移" else "开始配置迁移")
+                            }
+
+                            if (m.errors.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { showMigrationErrorsDialog = true },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("查看异常 (${m.errors.size})")
+                                }
+                            }
+                        }
+                    } ?: run {
+                        Text("正在查询配置迁移状态…", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
@@ -509,6 +692,110 @@ fun SettingsScreen(
                 ) {
                     Text("取消")
                 }
+            }
+        )
+    }
+
+    backupToRestore?.let { b ->
+        DangerousConfirmDialog(
+            show = true,
+            title = "确认还原数据库？",
+            message = "将使用备份 [${b.name}] 覆盖当前运行中的数据库及密钥配置。网关将自动创建 pre-restore 安全快照并重新载入连接。",
+            confirmLabel = "确认还原",
+            tokenBadge = "restore",
+            showTokenValue = false,
+            onDismiss = { backupToRestore = null },
+            onConfirm = {
+                val targetName = b.name
+                backupToRestore = null
+                scope.launch {
+                    client.restoreBackup(targetName, bearer).fold(
+                        onSuccess = {
+                            onShowMessage("数据库已成功还原！已重新加载状态")
+                            loadAllSettings()
+                        },
+                        onFailure = { onShowMessage("还原失败: ${it.message}") }
+                    )
+                }
+            }
+        )
+    }
+
+    backupToDelete?.let { b ->
+        AlertDialog(
+            onDismissRequest = { backupToDelete = null },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("确认删除备份？", fontWeight = FontWeight.Bold) },
+            text = { Text("即将永久删除备份文件 [${b.name}]${if (b.bundle) " 及其私钥 Bundle 目录" else ""}，此操作无法撤销。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targetName = b.name
+                        backupToDelete = null
+                        scope.launch {
+                            client.deleteBackup(targetName, bearer).fold(
+                                onSuccess = {
+                                    onShowMessage("备份已删除")
+                                    client.backups(bearer).onSuccess { backups = parseBackups(it) }
+                                },
+                                onFailure = { onShowMessage("删除失败: ${it.message}") }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("确认删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { backupToDelete = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showMigrationErrorsDialog) {
+        AlertDialog(
+            onDismissRequest = { showMigrationErrorsDialog = false },
+            icon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("配置迁移异常明细 (${migration?.errors?.size ?: 0})", fontWeight = FontWeight.Bold) },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().height(260.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(migration?.errors ?: emptyList()) { err ->
+                        ContentCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            insideMargin = PaddingValues(10.dp)
+                        ) {
+                            Text("文件: ${err.file}:${err.line}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Text("原因: ${err.message}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showMigrationErrorsDialog = false }) {
+                    Text("我知道了")
+                }
+            }
+        )
+    }
+
+    if (showLegacyPathPicker) {
+        PathPickerDialog(
+            title = "选择旧模块配置目录",
+            initialPath = legacyPathInput.text.ifBlank { migration?.detectedLegacyPath ?: "/data/adb/modules" },
+            remotes = emptyList(),
+            client = client,
+            bearer = bearer,
+            onDismiss = { showLegacyPathPicker = false },
+            onConfirm = { chosen ->
+                val p = if (chosen.contains(":")) chosen.substringAfter(":") else chosen
+                legacyPathInput = TextFieldValue(p)
+                showLegacyPathPicker = false
             }
         )
     }

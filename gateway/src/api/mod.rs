@@ -35,10 +35,21 @@ pub fn app_router(s: AppState) -> Router {
             "/api/v1/system/settings",
             get(system_settings_get).put(system_settings_set),
         )
-        .route("/api/v1/system/migration", get(migration_status))
+        .route(
+            "/api/v1/system/migration",
+            get(migration_status).post(migration_run),
+        )
         .route(
             "/api/v1/system/backups",
             get(backups_list).post(backup_create),
+        )
+        .route(
+            "/api/v1/system/backups/{name}",
+            axum::routing::delete(backup_delete),
+        )
+        .route(
+            "/api/v1/system/backups/{name}/restore",
+            post(backup_restore),
         )
         .route("/api/v1/system/logs/clear", post(logs_clear))
         .route("/api/v1/security/pairing/start", post(pair_start))

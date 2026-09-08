@@ -296,6 +296,7 @@ pub fn allowed_request(method: &str, path: &str) -> bool {
             | ("GET", "/api/v1/system/settings")
             | ("PUT", "/api/v1/system/settings")
             | ("GET", "/api/v1/system/migration")
+            | ("POST", "/api/v1/system/migration")
             | ("GET", "/api/v1/system/backups")
             | ("POST", "/api/v1/system/backups")
             | ("POST", "/api/v1/system/logs/clear")
@@ -325,6 +326,12 @@ pub fn allowed_request(method: &str, path: &str) -> bool {
     let parts: Vec<&str> = clean.split('/').collect();
     let valid_id = |v: Option<&&str>| v.is_some_and(|x| safe_request_segment(x));
     match parts.as_slice() {
+        ["", "api", "v1", "system", "backups", name] => {
+            crate::db::backup::valid_backup_name(name).is_ok() && method == "DELETE"
+        }
+        ["", "api", "v1", "system", "backups", name, "restore"] => {
+            crate::db::backup::valid_backup_name(name).is_ok() && method == "POST"
+        }
         ["", "api", "v1", "remotes", "import"] => method == "POST",
         ["", "api", "v1", "remotes", id] => {
             valid_id(Some(id)) && matches!(method, "GET" | "PUT" | "DELETE")

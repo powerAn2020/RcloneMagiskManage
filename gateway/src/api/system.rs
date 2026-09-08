@@ -223,10 +223,127 @@ pub async fn migration_status(
             }))
         })?
         .collect::<rusqlite::Result<_>>()?;
-    let errors: i64 = c.query_row("SELECT COUNT(*) FROM migration_errors", [], |r| r.get(0))?;
-    Ok(Json(
-        serde_json::json!({"applied": applied, "errorCount": errors}),
-    ))
+    let already_migrated = applied
+        .iter()
+        .any(|v| v.get("version").and_then(|x| x.as_i64()) == Some(2));
+    let errors_count: i64 = c
+        .query_row("SELECT COUNT(*) FROM migration_errors", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let candidates = [
+        "/data/adb/modules/rclone",
+        "/data/adb/rclone",
+        "/data/adb/modules_update/rclone",
+    ];
+    let detected_path = candidates.iter().find(|p| {
+        let path = std::path::Path::new(p);
+        path.join("rclone.conf").is_file()
+            || path.join("sync").is_file()
+            || path.join("copy").is_file()
+    }).map(|p| p.to_string());
+
+    let errors: Vec<serde_json::Value> = c
+        .prepare("SELECT id, migration_version, source_file, line_number, message, created_at FROM migration_errors ORDER BY id DESC LIMIT 20")?
+        .query_map([], |r| {
+            Ok(serde_json::json!({
+                "id": r.get::<_, i64>(0)?,
+                "version": r.get::<_, i64>(1)?,
+                "file": r.get::<_, String>(2)?,
+                "line": r.get::<_, i64>(3)?,
+                "message": r.get::<_, String>(4)?,
+                "createdAt": r.get::<_, i64>(5)?
+            }))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+
+    Ok(Json(serde_json::json!({
+        "applied": applied,
+        "alreadyMigrated": already_migrated,
+        "errorCount": errors_count,
+        "detectedLegacyPath": detected_path,
+        "errors": errors
+    })))
+}
+
+pub async fn migration_run(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    body: Option<Json<serde_json::Value>>,
+) -> Result<Json<serde_json::Value>> {
+    let client = scope(&h, &s, "security.write")?;
+    let legacy_path_str = body
+        .and_then(|Json(b)| b.get("legacyPath").and_then(|v| v.as_str()).map(str::to_string))
+        .or_else(|| {
+            let candidates = [
+                "/data/adb/modules/rclone",
+                "/data/adb/rclone",
+                "/data/adb/modules_update/rclone",
+            ];
+            candidates
+                .iter()
+                .find(|p| {
+                    let path = std::path::Path::new(p);
+                    path.join("rclone.conf").is_file()
+                        || path.join("sync").is_file()
+                        || path.join("copy").is_file()
+                })
+                .map(|p| p.to_string())
+        })
+        .ok_or_else(|| {
+            GatewayError::Message("未指定且未自动检测到历史配置目录 (例如 /data/adb/modules/rclone)".into())
+        })?;
+
+    let legacy_buf = std::path::PathBuf::from(&legacy_path_str);
+    if !legacy_buf.is_dir() {
+        return Err(GatewayError::Message(format!(
+            "历史配置目录不存在: {legacy_path_str}"
+        )));
+    }
+
+    let p = crate::state::Paths {
+        socket: s.root.join("runtime/gateway.sock"),
+        root: s.root.clone(),
+        legacy: Some(legacy_buf.clone()),
+        lan_addr: None,
+        tls_cert: None,
+        tls_key: None,
+        tls_client_ca: None,
+    };
+
+    {
+        let conn = db(&s)?;
+        conn.execute("DELETE FROM migration_history WHERE version=2", [])?;
+    }
+    crate::db::migrate(p)?;
+
+    audit(
+        &s,
+        Some(&client),
+        "system.migration.run",
+        None,
+        None,
+        "SUCCESS",
+        Some(&legacy_path_str),
+    )?;
+
+    let conn = db(&s)?;
+    let error_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM migration_errors", [], |r| r.get(0))
+        .unwrap_or(0);
+    let remotes_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM remote", [], |r| r.get(0))
+        .unwrap_or(0);
+    let jobs_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM job", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "legacyPath": legacy_path_str,
+        "remotesCount": remotes_count,
+        "jobsCount": jobs_count,
+        "errorCount": error_count
+    })))
 }
 
 pub async fn backup_create(
@@ -269,6 +386,79 @@ pub async fn backup_create(
             serde_json::json!({"path":dest,"sha256":checksum,"bytes":bytes.len(),"bundle":bundle}),
         ),
     ))
+}
+
+pub async fn backup_restore(
+    State(s): State<AppState>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    h: HeaderMap,
+) -> Result<Json<serde_json::Value>> {
+    let client = scope(&h, &s, "security.write")?;
+    {
+        let mut guard = s
+            .db
+            .lock()
+            .map_err(|_| GatewayError::Message("database lock poisoned".into()))?;
+        let _ = guard.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        *guard = rusqlite::Connection::open_in_memory()?;
+    }
+    let res = crate::db::backup::restore_backup(&s.root, &name);
+    {
+        let new_conn = rusqlite::Connection::open(s.root.join("db/state.db"))?;
+        let _ = new_conn.execute_batch("PRAGMA journal_mode=WAL;");
+        let mut guard = s
+            .db
+            .lock()
+            .map_err(|_| GatewayError::Message("database lock poisoned".into()))?;
+        *guard = new_conn;
+    }
+    let res = res?;
+    audit(
+        &s,
+        Some(&client),
+        "system.backup.restore",
+        None,
+        None,
+        "SUCCESS",
+        Some(&name),
+    )?;
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "restored": name,
+        "detail": res
+    })))
+}
+
+pub async fn backup_delete(
+    State(s): State<AppState>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    h: HeaderMap,
+) -> Result<Json<serde_json::Value>> {
+    let client = scope(&h, &s, "security.write")?;
+    crate::db::backup::valid_backup_name(&name)?;
+    let backup_path = s.root.join("backups").join(&name);
+    if !backup_path.is_file() {
+        return Err(GatewayError::Message("备份文件不存在".into()));
+    }
+    fs::remove_file(&backup_path)?;
+    let stem = name.trim_end_matches(".db");
+    let bundle_path = s.root.join("backups").join(format!("{stem}.bundle"));
+    if bundle_path.is_dir() {
+        let _ = fs::remove_dir_all(&bundle_path);
+    }
+    audit(
+        &s,
+        Some(&client),
+        "system.backup.delete",
+        None,
+        None,
+        "SUCCESS",
+        Some(&name),
+    )?;
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "deleted": name
+    })))
 }
 
 pub async fn backups_list(

@@ -88,9 +88,15 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         request("POST", "/api/v1/remotes/${java.net.URLEncoder.encode(id, "UTF-8")}/test", token)
 
     suspend fun createBackup(token: String): Result<String> = request("POST", "/api/v1/system/backups", token)
+    suspend fun restoreBackup(name: String, token: String): Result<String> = request("POST", "/api/v1/system/backups/${encode(name)}/restore", token)
+    suspend fun deleteBackup(name: String, token: String): Result<String> = request("DELETE", "/api/v1/system/backups/${encode(name)}", token)
     suspend fun settings(token: String): Result<String> = request("GET", "/api/v1/system/settings", token)
     suspend fun updateSettings(settings: JSONObject, token: String): Result<String> = request("PUT", "/api/v1/system/settings", token, settings)
     suspend fun migrationStatus(token: String): Result<String> = request("GET", "/api/v1/system/migration", token)
+    suspend fun runMigration(legacyPath: String?, token: String): Result<String> =
+        request("POST", "/api/v1/system/migration", token, JSONObject().apply {
+            if (!legacyPath.isNullOrBlank()) put("legacyPath", legacyPath)
+        })
 
     suspend fun deletePreview(remoteId: String, path: String, token: String): Result<String> =
         request("POST", "/api/v1/files/delete", token, JSONObject().put("remoteId", remoteId).put("path", path).put("dryRun", true))

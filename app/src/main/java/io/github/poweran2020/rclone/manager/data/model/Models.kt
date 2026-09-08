@@ -491,6 +491,8 @@ data class BackupItem(
     val name: String,
     val timestamp: Long,
     val size: Long,
+    val sha256: String = "",
+    val bundle: Boolean = false,
 )
 
 fun parseBackups(raw: String): List<BackupItem> = runCatching {
@@ -498,11 +500,15 @@ fun parseBackups(raw: String): List<BackupItem> = runCatching {
     buildList {
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
+            val size = if (item.has("bytes")) item.optLong("bytes") else item.optLong("size", 0L)
+            val timestamp = if (item.has("modified")) item.optLong("modified") else item.optLong("timestamp", 0L)
             add(
                 BackupItem(
                     name = item.optString("name"),
-                    timestamp = item.optLong("timestamp"),
-                    size = item.optLong("size", 0L),
+                    timestamp = timestamp,
+                    size = size,
+                    sha256 = item.optString("sha256", ""),
+                    bundle = item.optBoolean("bundle", false),
                 )
             )
         }
@@ -547,18 +553,50 @@ fun parseAuditLogs(raw: String): List<AuditLogItem> = runCatching {
     }
 }.getOrDefault(emptyList())
 
+data class MigrationErrorItem(
+    val id: Long,
+    val version: Long,
+    val file: String,
+    val line: Long,
+    val message: String,
+    val createdAt: Long,
+)
+
 data class MigrationStatusItem(
     val alreadyMigrated: Boolean,
     val migratedJobs: Int,
     val errorCount: Int,
+    val detectedLegacyPath: String? = null,
+    val errors: List<MigrationErrorItem> = emptyList(),
 )
 
 fun parseMigrationStatus(raw: String): MigrationStatusItem = runCatching {
     val obj = JSONObject(raw.trim())
+    val errorsArray = obj.optJSONArray("errors")
+    val errorList = if (errorsArray != null) {
+        buildList {
+            for (i in 0 until errorsArray.length()) {
+                val err = errorsArray.optJSONObject(i) ?: continue
+                add(
+                    MigrationErrorItem(
+                        id = err.optLong("id"),
+                        version = err.optLong("version"),
+                        file = err.optString("file"),
+                        line = err.optLong("line"),
+                        message = err.optString("message"),
+                        createdAt = err.optLong("createdAt"),
+                    )
+                )
+            }
+        }
+    } else emptyList()
+
     MigrationStatusItem(
         alreadyMigrated = obj.optBoolean("alreadyMigrated", false),
         migratedJobs = obj.optInt("migratedJobs", 0),
         errorCount = obj.optInt("errorCount", 0),
+        detectedLegacyPath = obj.optNullableString("detectedLegacyPath"),
+        errors = errorList,
     )
 }.getOrElse {
     MigrationStatusItem(alreadyMigrated = false, migratedJobs = 0, errorCount = 0)
