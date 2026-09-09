@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path as FsPath;
 use std::sync::Arc;
-use axum::Json;
+use axum::{Json, extract::Extension};
 use axum::http::HeaderMap;
 use base64::Engine;
 use hmac::{Hmac, Mac};
@@ -1524,7 +1524,7 @@ info line"#,
         // 3. Attempt to complete with cancelled code -> should fail
         let complete_res = pair_complete(
             axum::extract::State(state.clone()),
-            HeaderMap::new(),
+            Some(Extension(ClientSource::UnixSocket)),
             axum::extract::Json(Pair {
                 pairing_code: code.clone(),
                 client_name: "test-client".into(),
@@ -1544,22 +1544,21 @@ info line"#,
         assert_eq!(cancel_all_res["cancelledCount"], 1);
         assert!(state.pairing.read().await.is_empty());
 
-        // 5. Test brute-force protection: isolated by source, 60s cooldown, HTTP 429, no cross-source DoS
+        // 5. Test brute-force protection: strictly isolated by ClientSource, 60s cooldown, HTTP 429
         state.pairing_failures.write().await.clear();
         let (_, Json(start_res3)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
         let code3 = start_res3["pairingCode"].as_str().unwrap().to_string();
         assert!(state.pairing.read().await.contains_key(&code3));
 
-        let mut attacker_headers = HeaderMap::new();
-        attacker_headers.insert("x-gateway-peer-ip", "192.168.1.100".parse().unwrap());
+        let attacker_source = Some(Extension(ClientSource::Lan("192.168.1.100".parse().unwrap())));
 
-        for _ in 0..4 {
+        for i in 0..4 {
             let res = pair_complete(
                 axum::extract::State(state.clone()),
-                attacker_headers.clone(),
+                attacker_source.clone(),
                 axum::extract::Json(Pair {
                     pairing_code: "000000".into(),
-                    client_name: "attacker".into(),
+                    client_name: format!("attacker-{}", i), // Even if attacker changes client name, IP binds rate limit!
                     public_key: Some("key".into()),
                     package_name: None,
                 }),
@@ -1573,10 +1572,10 @@ info line"#,
         // 5th attempt by attacker triggers 60s throttle with HTTP 429 mapping
         let res5 = pair_complete(
             axum::extract::State(state.clone()),
-            attacker_headers.clone(),
+            attacker_source.clone(),
             axum::extract::Json(Pair {
                 pairing_code: "000000".into(),
-                client_name: "attacker".into(),
+                client_name: "attacker-changing-name".into(),
                 public_key: Some("key".into()),
                 package_name: None,
             }),
@@ -1591,7 +1590,7 @@ info line"#,
         // 6th attempt by attacker is immediately locked out
         let res6 = pair_complete(
             axum::extract::State(state.clone()),
-            attacker_headers.clone(),
+            attacker_source.clone(),
             axum::extract::Json(Pair {
                 pairing_code: "000000".into(),
                 client_name: "attacker".into(),
@@ -1604,11 +1603,10 @@ info line"#,
         assert!(res6.unwrap_err().to_string().contains("locked out"));
 
         // Crucial: Legitimate client from another source IP is NOT affected, code3 is preserved!
-        let mut legit_headers = HeaderMap::new();
-        legit_headers.insert("x-gateway-peer-ip", "192.168.1.200".parse().unwrap());
+        let legit_source = Some(Extension(ClientSource::Lan("192.168.1.200".parse().unwrap())));
         let legit_res = pair_complete(
             axum::extract::State(state.clone()),
-            legit_headers,
+            legit_source,
             axum::extract::Json(Pair {
                 pairing_code: code3.clone(),
                 client_name: "legitimate_app".into(),
@@ -1648,7 +1646,7 @@ info line"#,
         // 3. Complete pairing over LAN -> grants least-privilege (no admin.* or *)
         let (_, Json(complete_res)) = pair_complete(
             axum::extract::State(state.clone()),
-            HeaderMap::new(),
+            Some(Extension(ClientSource::Lan("192.168.1.50".parse().unwrap()))),
             axum::extract::Json(Pair {
                 pairing_code: code,
                 client_name: "lan-client".into(),

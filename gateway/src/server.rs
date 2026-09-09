@@ -33,7 +33,7 @@ use crate::engine::scheduler;
 #[cfg(unix)]
 use crate::security::{allowed_request, hash, master_key};
 #[cfg(unix)]
-use crate::state::{AppState, DEFAULT_SOCKET, SCHEMA};
+use crate::state::{AppState, ClientSource, DEFAULT_SOCKET, SCHEMA};
 
 use rusqlite::params;
 use crate::db::backup::restore_backup;
@@ -133,14 +133,11 @@ pub async fn run_lan(addr: SocketAddr, config: Arc<ServerConfig>, router: Router
                 }
             };
             let io = hyper_util::rt::TokioIo::new(tls_stream);
-            let peer_ip = peer_addr.ip().to_string();
+            let peer_ip = peer_addr.ip();
             let conn_router = router.layer(axum::middleware::from_fn(
                 move |mut req: axum::extract::Request, next: axum::middleware::Next| {
-                    let peer_ip = peer_ip.clone();
                     async move {
-                        if let Ok(val) = axum::http::HeaderValue::from_str(&peer_ip) {
-                            req.headers_mut().insert("x-gateway-peer-ip", val);
-                        }
+                        req.extensions_mut().insert(ClientSource::Lan(peer_ip));
                         next.run(req).await
                     }
                 },
@@ -263,7 +260,13 @@ pub async fn serve(p: Paths) -> Result<()> {
     }
     tokio::spawn(scheduler(s.clone()));
     println!("rclone-gateway listening on {}", p.socket.display());
-    axum::serve(l, app_router(s))
+    let unix_app = app_router(s).layer(axum::middleware::from_fn(
+        |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+            req.extensions_mut().insert(ClientSource::UnixSocket);
+            next.run(req).await
+        },
+    ));
+    axum::serve(l, unix_app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

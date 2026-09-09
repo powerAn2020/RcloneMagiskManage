@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::{HeaderMap, StatusCode},
 };
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
@@ -12,7 +12,7 @@ use crate::engine::mount::remote_target;
 use crate::error::{GatewayError, Result};
 use crate::security::auth::{audit, scope};
 use crate::security::crypto::{hash, ini_line_safe, now, valid_path, validate_identity};
-use crate::state::AppState;
+use crate::state::{AppState, ClientSource};
 use crate::types::{Client, GrantIn, Pair, PairResult, RemoteAclIn, TokenResult};
 
 pub async fn pair_start(State(s): State<AppState>) -> Result<(StatusCode, Json<serde_json::Value>)> {
@@ -68,44 +68,16 @@ pub async fn pair_cancel(
     ))
 }
 
-fn extract_source_key(h: &HeaderMap, client_name: &str) -> String {
-    if let Some(ip) = h
-        .get("x-gateway-peer-ip")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        return format!("ip:{}", ip);
-    }
-    if let Some(ip) = h
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        return format!("ip:{}", ip);
-    }
-    if let Some(ip) = h
-        .get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        return format!("ip:{}", ip);
-    }
-    let trimmed = client_name.trim();
-    if !trimmed.is_empty() {
-        format!("local:{}", trimmed)
-    } else {
-        "local:unknown".to_string()
+fn extract_source_key(source: Option<&ClientSource>) -> String {
+    match source {
+        Some(ClientSource::Lan(ip)) => format!("lan:{}", ip),
+        Some(ClientSource::UnixSocket) | None => "local:socket".to_string(),
     }
 }
 
 pub async fn pair_complete(
     State(s): State<AppState>,
-    h: HeaderMap,
+    source: Option<Extension<ClientSource>>,
     Json(i): Json<Pair>,
 ) -> Result<(StatusCode, Json<PairResult>)> {
     validate_identity(&i.client_name, "client name", 128)?;
@@ -117,7 +89,7 @@ pub async fn pair_complete(
         return Err(GatewayError::Message("invalid public key".into()));
     }
 
-    let source_key = extract_source_key(&h, &i.client_name);
+    let source_key = extract_source_key(source.as_ref().map(|Extension(v)| v));
     let now_ts = now();
     let mut fail_lock = s.pairing_failures.write().await;
     if let Some((_, locked_until)) = fail_lock.get(&source_key) {

@@ -16,6 +16,12 @@ pub const SCHEMA: &str = include_str!("../../schema-v1.sql");
 
 pub type Db = Arc<Mutex<Connection>>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientSource {
+    Lan(std::net::IpAddr),
+    UnixSocket,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: Db,
