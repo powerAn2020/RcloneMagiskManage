@@ -1503,7 +1503,7 @@ info line"#,
         };
 
         // 1. Start pairing -> generates code (60s lifetime)
-        let (_, Json(start_res)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
+        let (_, Json(start_res)) = pair_start(axum::extract::State(state.clone()), HeaderMap::new()).await.unwrap();
         let code = start_res["pairingCode"].as_str().unwrap().to_string();
         assert_eq!(code.len(), 6);
         assert_eq!(start_res["expiresIn"], 60);
@@ -1536,7 +1536,7 @@ info line"#,
         assert!(complete_res.is_err());
 
         // 4. Test cancel all (None body)
-        let (_, Json(start_res2)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
+        let (_, Json(start_res2)) = pair_start(axum::extract::State(state.clone()), HeaderMap::new()).await.unwrap();
         let code2 = start_res2["pairingCode"].as_str().unwrap().to_string();
         assert!(state.pairing.read().await.contains_key(&code2));
 
@@ -1546,7 +1546,7 @@ info line"#,
 
         // 5. Test brute-force protection: strictly isolated by ClientSource, 60s cooldown, HTTP 429
         state.pairing_failures.write().await.clear();
-        let (_, Json(start_res3)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
+        let (_, Json(start_res3)) = pair_start(axum::extract::State(state.clone()), HeaderMap::new()).await.unwrap();
         let code3 = start_res3["pairingCode"].as_str().unwrap().to_string();
         assert!(state.pairing.read().await.contains_key(&code3));
 
@@ -1639,11 +1639,24 @@ info line"#,
         let cancel_no_code = pair_cancel(axum::extract::State(state.clone()), HeaderMap::new(), None).await;
         assert!(cancel_no_code.is_err());
 
-        // 2. Generate a pairing code
-        let (_, Json(start_res)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
-        let code = start_res["pairingCode"].as_str().unwrap().to_string();
+        // 2. Unauthenticated cancel on LAN WITH code must ALSO be rejected (security.write required)
+        let cancel_with_code = pair_cancel(
+            axum::extract::State(state.clone()),
+            HeaderMap::new(),
+            Some(axum::extract::Json(serde_json::json!({ "pairingCode": "123456" }))),
+        )
+        .await;
+        assert!(cancel_with_code.is_err());
 
-        // 3. Complete pairing over LAN -> grants least-privilege (no admin.* or *)
+        // 3. Unauthenticated start on LAN must be rejected (security.write required)
+        let start_unauth = pair_start(axum::extract::State(state.clone()), HeaderMap::new()).await;
+        assert!(start_unauth.is_err());
+
+        // 4. In a real system, the pairing code is generated locally on device display (state.pairing)
+        let code = "123456".to_string();
+        state.pairing.write().await.insert(code.clone(), now() + 60);
+
+        // 5. Complete pairing over LAN -> grants least-privilege (no admin.* or *)
         let (_, Json(complete_res)) = pair_complete(
             axum::extract::State(state.clone()),
             Some(Extension(ClientSource::Lan("192.168.1.50".parse().unwrap()))),
@@ -1658,14 +1671,23 @@ info line"#,
         .unwrap();
 
         let client_id = complete_res.client_id;
-        let conn = state.db.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT scope FROM permission_grant WHERE client_id=?").unwrap();
-        let scopes: Vec<String> = stmt.query_map([&client_id], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+        let scopes: Vec<String> = {
+            let conn = state.db.lock().unwrap();
+            let mut stmt = conn.prepare("SELECT scope FROM permission_grant WHERE client_id=?").unwrap();
+            stmt.query_map([&client_id], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+        };
 
         assert!(!scopes.contains(&"admin.*".to_string()));
         assert!(!scopes.contains(&"*".to_string()));
+        assert!(!scopes.contains(&"security.write".to_string()));
         assert!(scopes.contains(&"remote.read".to_string()));
         assert!(scopes.contains(&"file.read".to_string()));
+
+        // 6. Verify that this paired low-privilege client CANNOT manage pairing (cannot pair_start or pair_cancel)
+        let mut client_headers = HeaderMap::new();
+        client_headers.insert("authorization", format!("Bearer {}", complete_res.token).parse().unwrap());
+        assert!(pair_start(axum::extract::State(state.clone()), client_headers.clone()).await.is_err());
+        assert!(pair_cancel(axum::extract::State(state.clone()), client_headers, None).await.is_err());
 
         let _ = fs::remove_dir_all(&state.root);
     }

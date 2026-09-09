@@ -15,7 +15,13 @@ use crate::security::crypto::{hash, ini_line_safe, now, valid_path, validate_ide
 use crate::state::{AppState, ClientSource};
 use crate::types::{Client, GrantIn, Pair, PairResult, RemoteAclIn, TokenResult};
 
-pub async fn pair_start(State(s): State<AppState>) -> Result<(StatusCode, Json<serde_json::Value>)> {
+pub async fn pair_start(
+    State(s): State<AppState>,
+    h: HeaderMap,
+) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    if s.require_signature {
+        let _ = scope(&h, &s, "security.write")?;
+    }
     let c = format!("{:06}", rand::random::<u32>() % 1_000_000);
     s.pairing.write().await.insert(c.clone(), now() + 60);
     Ok((
@@ -29,6 +35,9 @@ pub async fn pair_cancel(
     h: HeaderMap,
     body: Option<Json<serde_json::Value>>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    if s.require_signature {
+        let _ = scope(&h, &s, "security.write")?;
+    }
     let code_opt = body.and_then(|Json(b)| {
         b.get("pairingCode")
             .or_else(|| b.get("pairing_code"))
@@ -40,9 +49,6 @@ pub async fn pair_cancel(
     let removed_count = if let Some(code) = code_opt {
         if lock.remove(&code).is_some() { 1 } else { 0 }
     } else {
-        if s.require_signature {
-            let _ = scope(&h, &s, "security.write")?;
-        }
         let count = lock.len();
         lock.clear();
         count
