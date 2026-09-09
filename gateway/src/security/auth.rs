@@ -136,12 +136,7 @@ pub async fn signed_request(
     };
     if !signed {
         if s.require_signature
-            && !matches!(
-                parts.uri.path(),
-                "/api/v1/security/pairing/start"
-                    | "/api/v1/security/pairing/complete"
-                    | "/api/v1/security/pairing/cancel"
-            )
+            && parts.uri.path() != "/api/v1/security/pairing/complete"
         {
             return GatewayError::Message("AUTH signed request required on LAN".into())
                 .into_response();
@@ -218,6 +213,10 @@ pub fn scope(h: &HeaderMap, s: &AppState, name: &str) -> Result<String> {
         return Err(GatewayError::Message(format!("AUTH scope denied: {name}")));
     }
     Ok(id)
+}
+
+pub fn has_scope(h: &HeaderMap, s: &AppState, name: &str) -> bool {
+    scope(h, s, name).is_ok()
 }
 
 pub fn acl(s: &AppState, c: &str, r: &str, p: &str, path: &str) -> Result<()> {

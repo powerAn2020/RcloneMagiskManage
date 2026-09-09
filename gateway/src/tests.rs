@@ -284,6 +284,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let remote_id = "remote-1";
@@ -370,6 +371,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         audit_path(
@@ -406,6 +408,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let conn = db(&state).unwrap();
@@ -446,6 +449,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         db(&state)
@@ -476,6 +480,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let conn = db(&state).unwrap();
@@ -573,6 +578,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let id = Uuid::new_v4().to_string();
@@ -619,6 +625,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let token = "test-token";
@@ -655,6 +662,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let mut headers = HeaderMap::new();
@@ -791,6 +799,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let token = "test_token_123";
@@ -855,6 +864,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let token = "test_token_del";
@@ -910,6 +920,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let token = "test_token_del_ref";
@@ -972,6 +983,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
         let logs_dir = state.root.join("logs");
@@ -1042,6 +1054,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
 
@@ -1165,12 +1178,51 @@ info line"#,
         assert!(redacted_ini.contains("pass = ***REDACTED***"));
         assert!(!redacted_ini.contains("secret123"));
 
+        assert_eq!(exported["credentialsIncluded"], true);
+
         let obscured_pass = full_json["pass"].as_str().unwrap();
         let deobscured = crate::security::crypto::deobscure_rclone(obscured_pass).unwrap();
         assert_eq!(deobscured, "secret123");
 
         assert_eq!(redacted_json["pass"], "***REDACTED***");
         assert_eq!(redacted_json["user"], "newuser");
+
+        // 6. Test remote_export with a read-only client (no remote.write): must return redacted in both ini and json!
+        let ro_token = "ro_token_123";
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c_ro','test_ro',?,'ACTIVE',?)",
+                params![hash(ro_token), t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c_ro','remote.read','*',NULL)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO remote_acl(client_id,remote_id,permissions,allowed_prefix) VALUES('c_ro',?,'file.read','/')",
+                params![remote_id],
+            )
+            .unwrap();
+        }
+        let mut ro_h = HeaderMap::new();
+        ro_h.insert("authorization", format!("Bearer {ro_token}").parse().unwrap());
+        let ro_exported = crate::api::remotes::remote_export(
+            axum::extract::State(state.clone()),
+            ro_h,
+            axum::extract::Path(remote_id.clone()),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert_eq!(ro_exported["credentialsIncluded"], false);
+        let ro_ini = ro_exported["ini"].as_str().unwrap();
+        assert!(ro_ini.contains("pass = ***REDACTED***"));
+        assert!(!ro_ini.contains("secret123"));
+        assert_eq!(ro_exported["json"]["pass"], "***REDACTED***");
 
         let _ = fs::remove_dir_all(&state.root);
     }
@@ -1184,6 +1236,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
 
@@ -1354,6 +1407,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
 
@@ -1444,18 +1498,21 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
             require_signature: false,
         };
 
-        // 1. Start pairing -> generates code
+        // 1. Start pairing -> generates code (60s lifetime)
         let (_, Json(start_res)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
         let code = start_res["pairingCode"].as_str().unwrap().to_string();
         assert_eq!(code.len(), 6);
+        assert_eq!(start_res["expiresIn"], 60);
         assert!(state.pairing.read().await.contains_key(&code));
 
         // 2. Cancel pairing by code
         let (_, Json(cancel_res)) = pair_cancel(
             axum::extract::State(state.clone()),
+            HeaderMap::new(),
             Some(axum::extract::Json(serde_json::json!({ "pairingCode": code }))),
         )
         .await
@@ -1482,9 +1539,91 @@ info line"#,
         let code2 = start_res2["pairingCode"].as_str().unwrap().to_string();
         assert!(state.pairing.read().await.contains_key(&code2));
 
-        let (_, Json(cancel_all_res)) = pair_cancel(axum::extract::State(state.clone()), None).await.unwrap();
+        let (_, Json(cancel_all_res)) = pair_cancel(axum::extract::State(state.clone()), HeaderMap::new(), None).await.unwrap();
         assert_eq!(cancel_all_res["cancelledCount"], 1);
         assert!(state.pairing.read().await.is_empty());
+
+        // 5. Test brute-force protection: failed attempts throttle, but MUST NOT wipe legitimate codes (prevents DoS)
+        *state.pairing_failures.write().await = (0, 0);
+        let (_, Json(start_res3)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
+        let code3 = start_res3["pairingCode"].as_str().unwrap().to_string();
+        assert!(state.pairing.read().await.contains_key(&code3));
+
+        for _ in 0..4 {
+            let res = pair_complete(
+                axum::extract::State(state.clone()),
+                axum::extract::Json(Pair {
+                    pairing_code: "000000".into(),
+                    client_name: "attacker".into(),
+                    public_key: Some("key".into()),
+                    package_name: None,
+                }),
+            )
+            .await;
+            assert!(res.is_err());
+            assert!(!res.unwrap_err().to_string().contains("throttled"));
+        }
+
+        // 5th attempt must trigger throttle, but MUST NOT destroy code3!
+        let res5 = pair_complete(
+            axum::extract::State(state.clone()),
+            axum::extract::Json(Pair {
+                pairing_code: "000000".into(),
+                client_name: "attacker".into(),
+                public_key: Some("key".into()),
+                package_name: None,
+            }),
+        )
+        .await;
+        assert!(res5.is_err());
+        assert!(res5.unwrap_err().to_string().contains("throttled"));
+        assert!(state.pairing.read().await.contains_key(&code3)); // Legitimate code is preserved! No DoS!
+
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
+    #[tokio::test]
+    async fn lan_pairing_routes_and_least_privilege() {
+        let root = std::env::temp_dir().join(format!("rclone-lan-pair-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            require_signature: true,
+        };
+
+        // 1. Unauthenticated cancel on LAN without code must be rejected
+        let cancel_no_code = pair_cancel(axum::extract::State(state.clone()), HeaderMap::new(), None).await;
+        assert!(cancel_no_code.is_err());
+
+        // 2. Generate a pairing code
+        let (_, Json(start_res)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
+        let code = start_res["pairingCode"].as_str().unwrap().to_string();
+
+        // 3. Complete pairing over LAN -> grants least-privilege (no admin.* or *)
+        let (_, Json(complete_res)) = pair_complete(
+            axum::extract::State(state.clone()),
+            axum::extract::Json(Pair {
+                pairing_code: code,
+                client_name: "lan-client".into(),
+                public_key: Some("lan-device".into()),
+                package_name: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let client_id = complete_res.client_id;
+        let conn = state.db.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT scope FROM permission_grant WHERE client_id=?").unwrap();
+        let scopes: Vec<String> = stmt.query_map([&client_id], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+
+        assert!(!scopes.contains(&"admin.*".to_string()));
+        assert!(!scopes.contains(&"*".to_string()));
+        assert!(scopes.contains(&"remote.read".to_string()));
+        assert!(scopes.contains(&"file.read".to_string()));
 
         let _ = fs::remove_dir_all(&state.root);
     }

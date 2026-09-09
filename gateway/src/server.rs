@@ -153,6 +153,7 @@ pub async fn serve(p: Paths) -> Result<()> {
         db: database.clone(),
         root: p.root.clone(),
         pairing: Arc::new(RwLock::new(HashMap::new())),
+        pairing_failures: Arc::new(RwLock::new((0, 0))),
         require_signature: false,
     })?
     .execute(
@@ -202,6 +203,7 @@ pub async fn serve(p: Paths) -> Result<()> {
         db: database.clone(),
         root: p.root,
         pairing: Arc::new(RwLock::new(HashMap::new())),
+        pairing_failures: Arc::new(RwLock::new((0, 0))),
         require_signature: false,
     };
     if let Some(addr) = p.lan_addr {

@@ -17,15 +17,16 @@ use crate::types::{Client, GrantIn, Pair, PairResult, RemoteAclIn, TokenResult};
 
 pub async fn pair_start(State(s): State<AppState>) -> Result<(StatusCode, Json<serde_json::Value>)> {
     let c = format!("{:06}", rand::random::<u32>() % 1_000_000);
-    s.pairing.write().await.insert(c.clone(), now() + 300);
+    s.pairing.write().await.insert(c.clone(), now() + 60);
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({"pairingCode":c,"expiresIn":300})),
+        Json(serde_json::json!({"pairingCode":c,"expiresIn":60})),
     ))
 }
 
 pub async fn pair_cancel(
     State(s): State<AppState>,
+    h: HeaderMap,
     body: Option<Json<serde_json::Value>>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
     let code_opt = body.and_then(|Json(b)| {
@@ -39,6 +40,9 @@ pub async fn pair_cancel(
     let removed_count = if let Some(code) = code_opt {
         if lock.remove(&code).is_some() { 1 } else { 0 }
     } else {
+        if s.require_signature {
+            let _ = scope(&h, &s, "security.write")?;
+        }
         let count = lock.len();
         lock.clear();
         count
@@ -76,41 +80,87 @@ pub async fn pair_complete(
     {
         return Err(GatewayError::Message("invalid public key".into()));
     }
-    if s.pairing
-        .write()
-        .await
+
+    let now_ts = now();
+    let mut fail_lock = s.pairing_failures.write().await;
+    if fail_lock.1 > now_ts {
+        return Err(GatewayError::Message(
+            "AUTH pairing is temporarily locked out due to too many failed attempts".into(),
+        ));
+    }
+
+    let mut pair_lock = s.pairing.write().await;
+    let valid_code = pair_lock
         .remove(&i.pairing_code)
-        .filter(|e| *e > now())
-        .is_none()
-    {
+        .filter(|e| *e > now_ts)
+        .is_some();
+
+    if !valid_code {
+        fail_lock.0 += 1;
+        if fail_lock.0 >= 5 {
+            fail_lock.1 = now_ts + 5;
+            fail_lock.0 = 0;
+            drop(pair_lock);
+            drop(fail_lock);
+            return Err(GatewayError::Message(
+                "AUTH too many failed pairing attempts; throttled for 5 seconds".into(),
+            ));
+        }
+        drop(pair_lock);
+        drop(fail_lock);
         return Err(GatewayError::Message(
             "AUTH invalid or expired pairing code".into(),
         ));
     }
+
+    fail_lock.0 = 0;
+    fail_lock.1 = 0;
+    drop(pair_lock);
+    drop(fail_lock);
+
     let id = Uuid::new_v4().to_string();
     let tok = B64.encode(rand::random::<[u8; 32]>());
     let c = db(&s)?;
     let token_expires = now() + 30 * 24 * 3600;
     c.execute("INSERT INTO client(id,name,package_name,public_key,token_hash,status,created_at,token_expires_at) VALUES(?,?,?,?,?,'ACTIVE',?,?)",params![id,i.client_name,i.package_name,i.public_key,hash(&tok),now(),token_expires])?;
-    for initial in [
-        "system.read",
-        "remote.read",
-        "remote.write",
-        "remote.delete",
-        "file.read",
-        "file.write",
-        "file.delete",
-        "job.read",
-        "job.execute",
-        "job.control",
-        "mount.read",
-        "mount.write",
-        "audit.read",
-        "security.read",
-        "security.write",
-        "admin.*",
-        "*",
-    ] {
+
+    let initial_scopes: &[&str] = if s.require_signature {
+        &[
+            "system.read",
+            "remote.read",
+            "remote.write",
+            "file.read",
+            "file.write",
+            "job.read",
+            "job.execute",
+            "job.control",
+            "mount.read",
+            "mount.write",
+            "audit.read",
+        ]
+    } else {
+        &[
+            "system.read",
+            "remote.read",
+            "remote.write",
+            "remote.delete",
+            "file.read",
+            "file.write",
+            "file.delete",
+            "job.read",
+            "job.execute",
+            "job.control",
+            "mount.read",
+            "mount.write",
+            "audit.read",
+            "security.read",
+            "security.write",
+            "admin.*",
+            "*",
+        ]
+    };
+
+    for initial in initial_scopes {
         c.execute(
             "INSERT INTO permission_grant(client_id,scope,resource) VALUES(?,?,?)",
             params![id, initial, "*"],

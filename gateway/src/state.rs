@@ -21,6 +21,8 @@ pub struct AppState {
     pub db: Db,
     pub root: PathBuf,
     pub pairing: Arc<RwLock<HashMap<String, i64>>>,
+    /// Track consecutive failed pairing attempts and lockout expiry epoch (failures, locked_until).
+    pub pairing_failures: Arc<RwLock<(u32, i64)>>,
     /// LAN routers require HMAC request signing after pairing. Unix clients
     /// retain the local bearer-only flow because socket permissions provide
     /// the transport boundary there.

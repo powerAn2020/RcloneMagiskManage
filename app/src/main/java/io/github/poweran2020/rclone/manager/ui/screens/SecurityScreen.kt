@@ -310,7 +310,7 @@ fun SecurityScreen(
                 }
                 Text(
                     "• 供局域网电脑、Web 控制台或第三方命令行客户端配对授权接入。\n" +
-                    "• 配对码有效期为 300 秒，完成配对后 Gateway 发放独立 Bearer 令牌。\n" +
+                    "• 配对码有效期为 60 秒，完成配对后 Gateway 发放独立 Bearer 令牌。\n" +
                     "• 令牌仅以哈希值落盘，支持按客户端单独禁用与即时令牌轮换。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -327,11 +327,11 @@ fun SecurityScreen(
                                     onSuccess = { res ->
                                         val obj = JSONObject(res)
                                         val code = obj.optString("pairingCode")
-                                        val expiresIn = obj.optLong("expiresIn", 300L)
+                                        val expiresIn = obj.optLong("expiresIn", 60L)
                                         pairingCodeInfo = code
                                         pairingExpiresAt = System.currentTimeMillis() + expiresIn * 1000L
                                         pairingRemainingSeconds = expiresIn.toInt()
-                                        onShowMessage("已生成新配对码: $code (300 秒有效)")
+                                        onShowMessage("已生成新配对码: $code ($expiresIn 秒有效)")
                                     },
                                     onFailure = { onShowMessage("启动配对失败: ${it.message}") }
                                 )

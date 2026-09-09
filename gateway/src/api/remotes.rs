@@ -657,8 +657,16 @@ pub async fn remote_export(
         }
     }
 
+    let can_export_secrets = crate::security::auth::has_scope(&h, &s, "admin.*");
+
     let full_ini = full_ini_lines.join("\n") + "\n";
     let redacted_ini = redacted_ini_lines.join("\n") + "\n";
+
+    let (export_ini, export_json, credentials_included) = if can_export_secrets {
+        (full_ini, full_json_map, true)
+    } else {
+        (redacted_ini.clone(), redacted_json_map.clone(), false)
+    };
 
     audit(
         &s,
@@ -676,10 +684,10 @@ pub async fn remote_export(
         "endpoint": endpoint,
         "basePath": base_path,
         "enabled": enabled,
-        "credentialsIncluded": false,
-        "ini": full_ini,
+        "credentialsIncluded": credentials_included,
+        "ini": export_ini,
         "redactedIni": redacted_ini,
-        "json": full_json_map,
+        "json": export_json,
         "redactedJson": redacted_json_map
     })))
 }
