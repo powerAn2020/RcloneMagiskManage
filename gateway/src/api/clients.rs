@@ -68,8 +68,44 @@ pub async fn pair_cancel(
     ))
 }
 
+fn extract_source_key(h: &HeaderMap, client_name: &str) -> String {
+    if let Some(ip) = h
+        .get("x-gateway-peer-ip")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return format!("ip:{}", ip);
+    }
+    if let Some(ip) = h
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return format!("ip:{}", ip);
+    }
+    if let Some(ip) = h
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return format!("ip:{}", ip);
+    }
+    let trimmed = client_name.trim();
+    if !trimmed.is_empty() {
+        format!("local:{}", trimmed)
+    } else {
+        "local:unknown".to_string()
+    }
+}
+
 pub async fn pair_complete(
     State(s): State<AppState>,
+    h: HeaderMap,
     Json(i): Json<Pair>,
 ) -> Result<(StatusCode, Json<PairResult>)> {
     validate_identity(&i.client_name, "client name", 128)?;
@@ -81,12 +117,15 @@ pub async fn pair_complete(
         return Err(GatewayError::Message("invalid public key".into()));
     }
 
+    let source_key = extract_source_key(&h, &i.client_name);
     let now_ts = now();
     let mut fail_lock = s.pairing_failures.write().await;
-    if fail_lock.1 > now_ts {
-        return Err(GatewayError::Message(
-            "AUTH pairing is temporarily locked out due to too many failed attempts".into(),
-        ));
+    if let Some((_, locked_until)) = fail_lock.get(&source_key) {
+        if *locked_until > now_ts {
+            return Err(GatewayError::Message(
+                "RATE_LIMITED: pairing is temporarily locked out due to too many failed attempts; please retry after 60 seconds".into(),
+            ));
+        }
     }
 
     let mut pair_lock = s.pairing.write().await;
@@ -96,14 +135,15 @@ pub async fn pair_complete(
         .is_some();
 
     if !valid_code {
-        fail_lock.0 += 1;
-        if fail_lock.0 >= 5 {
-            fail_lock.1 = now_ts + 5;
-            fail_lock.0 = 0;
+        let entry = fail_lock.entry(source_key).or_insert((0, 0));
+        entry.0 += 1;
+        if entry.0 >= 5 {
+            entry.1 = now_ts + 60;
+            entry.0 = 0;
             drop(pair_lock);
             drop(fail_lock);
             return Err(GatewayError::Message(
-                "AUTH too many failed pairing attempts; throttled for 5 seconds".into(),
+                "RATE_LIMITED: too many failed pairing attempts; throttled for 60 seconds".into(),
             ));
         }
         drop(pair_lock);
@@ -113,8 +153,7 @@ pub async fn pair_complete(
         ));
     }
 
-    fail_lock.0 = 0;
-    fail_lock.1 = 0;
+    fail_lock.remove(&source_key);
     drop(pair_lock);
     drop(fail_lock);
 

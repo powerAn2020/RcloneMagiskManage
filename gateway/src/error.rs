@@ -47,11 +47,19 @@ impl IntoResponse for GatewayError {
             GatewayError::Message(ref m) if m.contains("migration") => "MIGRATION_REQUIRED",
             GatewayError::Message(ref m) if m.contains("MOUNT_CONFLICT") => "MOUNT_CONFLICT",
             GatewayError::Message(ref m) if m.contains("missing bearer") => "AUTH_REQUIRED",
+            GatewayError::Message(ref m)
+                if m.starts_with("RATE_LIMITED")
+                    || m.contains("too many failed")
+                    || m.contains("locked out") =>
+            {
+                "RATE_LIMITED"
+            }
             GatewayError::Message(ref m) if m.starts_with("AUTH") => "AUTH_INVALID",
             GatewayError::Message(ref m) if m.starts_with("PATH_DENIED") => "PATH_DENIED",
             GatewayError::Message(_) => "INVALID_REQUEST",
         };
         let status = match code {
+            "RATE_LIMITED" => StatusCode::TOO_MANY_REQUESTS,
             "AUTH_REQUIRED" | "AUTH_INVALID" => StatusCode::UNAUTHORIZED,
             "SCOPE_DENIED" | "REMOTE_DENIED" => StatusCode::FORBIDDEN,
             "REMOTE_IN_USE" => StatusCode::CONFLICT,

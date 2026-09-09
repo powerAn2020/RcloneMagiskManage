@@ -121,7 +121,7 @@ pub async fn run_lan(addr: SocketAddr, config: Arc<ServerConfig>, router: Router
     let listener = TcpListener::bind(addr).await?;
     let acceptor = TlsAcceptor::from(config);
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, peer_addr) = listener.accept().await?;
         let acceptor = acceptor.clone();
         let router = router.clone();
         tokio::spawn(async move {
@@ -133,7 +133,19 @@ pub async fn run_lan(addr: SocketAddr, config: Arc<ServerConfig>, router: Router
                 }
             };
             let io = hyper_util::rt::TokioIo::new(tls_stream);
-            let service = hyper_util::service::TowerToHyperService::new(router.into_service());
+            let peer_ip = peer_addr.ip().to_string();
+            let conn_router = router.layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| {
+                    let peer_ip = peer_ip.clone();
+                    async move {
+                        if let Ok(val) = axum::http::HeaderValue::from_str(&peer_ip) {
+                            req.headers_mut().insert("x-gateway-peer-ip", val);
+                        }
+                        next.run(req).await
+                    }
+                },
+            ));
+            let service = hyper_util::service::TowerToHyperService::new(conn_router.into_service());
             if let Err(error) = hyper::server::conn::http1::Builder::new()
                 .serve_connection(io, service)
                 .await
@@ -153,7 +165,7 @@ pub async fn serve(p: Paths) -> Result<()> {
         db: database.clone(),
         root: p.root.clone(),
         pairing: Arc::new(RwLock::new(HashMap::new())),
-        pairing_failures: Arc::new(RwLock::new((0, 0))),
+        pairing_failures: Arc::new(RwLock::new(HashMap::new())),
         require_signature: false,
     })?
     .execute(
@@ -203,7 +215,7 @@ pub async fn serve(p: Paths) -> Result<()> {
         db: database.clone(),
         root: p.root,
         pairing: Arc::new(RwLock::new(HashMap::new())),
-        pairing_failures: Arc::new(RwLock::new((0, 0))),
+        pairing_failures: Arc::new(RwLock::new(HashMap::new())),
         require_signature: false,
     };
     if let Some(addr) = p.lan_addr {

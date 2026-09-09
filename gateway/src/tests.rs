@@ -284,7 +284,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let remote_id = "remote-1";
@@ -371,7 +371,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         audit_path(
@@ -408,7 +408,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let conn = db(&state).unwrap();
@@ -449,7 +449,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         db(&state)
@@ -480,7 +480,7 @@ use crate::types::*;
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let conn = db(&state).unwrap();
@@ -578,7 +578,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let id = Uuid::new_v4().to_string();
@@ -625,7 +625,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let token = "test-token";
@@ -662,7 +662,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let mut headers = HeaderMap::new();
@@ -799,7 +799,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let token = "test_token_123";
@@ -864,7 +864,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let token = "test_token_del";
@@ -920,7 +920,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let token = "test_token_del_ref";
@@ -983,7 +983,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
         let logs_dir = state.root.join("logs");
@@ -1054,7 +1054,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
 
@@ -1236,7 +1236,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
 
@@ -1407,7 +1407,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
 
@@ -1498,7 +1498,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: false,
         };
 
@@ -1524,6 +1524,7 @@ info line"#,
         // 3. Attempt to complete with cancelled code -> should fail
         let complete_res = pair_complete(
             axum::extract::State(state.clone()),
+            HeaderMap::new(),
             axum::extract::Json(Pair {
                 pairing_code: code.clone(),
                 client_name: "test-client".into(),
@@ -1543,15 +1544,19 @@ info line"#,
         assert_eq!(cancel_all_res["cancelledCount"], 1);
         assert!(state.pairing.read().await.is_empty());
 
-        // 5. Test brute-force protection: failed attempts throttle, but MUST NOT wipe legitimate codes (prevents DoS)
-        *state.pairing_failures.write().await = (0, 0);
+        // 5. Test brute-force protection: isolated by source, 60s cooldown, HTTP 429, no cross-source DoS
+        state.pairing_failures.write().await.clear();
         let (_, Json(start_res3)) = pair_start(axum::extract::State(state.clone())).await.unwrap();
         let code3 = start_res3["pairingCode"].as_str().unwrap().to_string();
         assert!(state.pairing.read().await.contains_key(&code3));
 
+        let mut attacker_headers = HeaderMap::new();
+        attacker_headers.insert("x-gateway-peer-ip", "192.168.1.100".parse().unwrap());
+
         for _ in 0..4 {
             let res = pair_complete(
                 axum::extract::State(state.clone()),
+                attacker_headers.clone(),
                 axum::extract::Json(Pair {
                     pairing_code: "000000".into(),
                     client_name: "attacker".into(),
@@ -1561,12 +1566,14 @@ info line"#,
             )
             .await;
             assert!(res.is_err());
-            assert!(!res.unwrap_err().to_string().contains("throttled"));
+            let err = res.unwrap_err();
+            assert!(!err.to_string().contains("throttled"));
         }
 
-        // 5th attempt must trigger throttle, but MUST NOT destroy code3!
+        // 5th attempt by attacker triggers 60s throttle with HTTP 429 mapping
         let res5 = pair_complete(
             axum::extract::State(state.clone()),
+            attacker_headers.clone(),
             axum::extract::Json(Pair {
                 pairing_code: "000000".into(),
                 client_name: "attacker".into(),
@@ -1576,8 +1583,44 @@ info line"#,
         )
         .await;
         assert!(res5.is_err());
-        assert!(res5.unwrap_err().to_string().contains("throttled"));
-        assert!(state.pairing.read().await.contains_key(&code3)); // Legitimate code is preserved! No DoS!
+        let err5 = res5.unwrap_err();
+        assert!(err5.to_string().contains("throttled for 60 seconds"));
+        let response = axum::response::IntoResponse::into_response(err5);
+        assert_eq!(response.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
+
+        // 6th attempt by attacker is immediately locked out
+        let res6 = pair_complete(
+            axum::extract::State(state.clone()),
+            attacker_headers.clone(),
+            axum::extract::Json(Pair {
+                pairing_code: "000000".into(),
+                client_name: "attacker".into(),
+                public_key: Some("key".into()),
+                package_name: None,
+            }),
+        )
+        .await;
+        assert!(res6.is_err());
+        assert!(res6.unwrap_err().to_string().contains("locked out"));
+
+        // Crucial: Legitimate client from another source IP is NOT affected, code3 is preserved!
+        let mut legit_headers = HeaderMap::new();
+        legit_headers.insert("x-gateway-peer-ip", "192.168.1.200".parse().unwrap());
+        let legit_res = pair_complete(
+            axum::extract::State(state.clone()),
+            legit_headers,
+            axum::extract::Json(Pair {
+                pairing_code: code3.clone(),
+                client_name: "legitimate_app".into(),
+                public_key: Some("valid-key".into()),
+                package_name: None,
+            }),
+        )
+        .await;
+        assert!(legit_res.is_ok());
+        let (status, Json(pair_res)) = legit_res.unwrap();
+        assert_eq!(status, axum::http::StatusCode::CREATED);
+        assert!(!pair_res.token.is_empty());
 
         let _ = fs::remove_dir_all(&state.root);
     }
@@ -1590,7 +1633,7 @@ info line"#,
             db: open_db(&root).unwrap(),
             root: root.clone(),
             pairing: Arc::new(RwLock::new(HashMap::new())),
-            pairing_failures: Arc::new(RwLock::new((0, 0))),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
             require_signature: true,
         };
 
@@ -1605,6 +1648,7 @@ info line"#,
         // 3. Complete pairing over LAN -> grants least-privilege (no admin.* or *)
         let (_, Json(complete_res)) = pair_complete(
             axum::extract::State(state.clone()),
+            HeaderMap::new(),
             axum::extract::Json(Pair {
                 pairing_code: code,
                 client_name: "lan-client".into(),
