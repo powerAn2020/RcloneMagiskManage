@@ -78,6 +78,9 @@ import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
 import io.github.poweran2020.rclone.manager.ui.component.TogglePreference
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import androidx.compose.ui.res.stringResource
+import io.github.poweran2020.rclone.manager.R
+import io.github.poweran2020.rclone.manager.data.AppLanguage
 
 @Composable
 fun SettingsScreen(
@@ -86,6 +89,8 @@ fun SettingsScreen(
     bearer: String,
     themeMode: ThemeMode,
     onThemeModeChanged: (ThemeMode) -> Unit,
+    appLanguage: AppLanguage,
+    onAppLanguageChanged: (AppLanguage) -> Unit,
     onEditToken: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
@@ -162,9 +167,9 @@ fun SettingsScreen(
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionTitle(text = "界面外观主题")
+                    SectionTitle(text = stringResource(R.string.settings_cat_appearance))
                     Text(
-                        text = "选择应用显示配色风格，支持浅色、深色及跟随系统夜间模式",
+                        text = stringResource(R.string.settings_theme_title),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -178,7 +183,34 @@ fun SettingsScreen(
                             FilterChip(
                                 selected = themeMode == mode,
                                 onClick = { onThemeModeChanged(mode) },
-                                label = { Text(mode.title, style = MaterialTheme.typography.bodySmall) }
+                                label = { Text(stringResource(mode.titleResId), style = MaterialTheme.typography.bodySmall) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            ContentCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionTitle(text = stringResource(R.string.settings_cat_language))
+                    Text(
+                        text = "选择应用界面展示语言 / Select display language",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AppLanguage.values().forEach { lang ->
+                            FilterChip(
+                                selected = appLanguage == lang,
+                                onClick = { onAppLanguageChanged(lang) },
+                                label = { Text(stringResource(lang.titleResId), style = MaterialTheme.typography.bodySmall) }
                             )
                         }
                     }

@@ -36,8 +36,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.github.poweran2020.rclone.manager.R
 
 @Composable
 fun DangerousConfirmDialog(
@@ -46,12 +48,13 @@ fun DangerousConfirmDialog(
     message: String,
     tokenBadge: String? = null,
     showTokenValue: Boolean = false,
-    confirmLabel: String = "确认执行",
+    confirmLabel: String? = null,
     isLoading: Boolean = false,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
     if (!show) return
+    val resolvedConfirmLabel = confirmLabel ?: stringResource(R.string.action_confirm_execute)
     var remainingSeconds by remember(show, tokenBadge) { mutableStateOf(60) }
     LaunchedEffect(show, tokenBadge) {
         if (!show || tokenBadge.isNullOrBlank()) return@LaunchedEffect
@@ -90,9 +93,9 @@ fun DangerousConfirmDialog(
                 if (!tokenBadge.isNullOrBlank()) {
                     if (remainingSeconds > 0) {
                         val tokenText = if (showTokenValue) {
-                            "确认令牌: $tokenBadge (有效剩余: ${remainingSeconds}秒)"
+                            stringResource(R.string.token_badge_with_val, tokenBadge, remainingSeconds)
                         } else {
-                            "操作确认有效剩余: ${remainingSeconds}秒"
+                            stringResource(R.string.token_badge_no_val, remainingSeconds)
                         }
                         Text(
                             tokenText,
@@ -102,7 +105,7 @@ fun DangerousConfirmDialog(
                         )
                     } else {
                         Text(
-                            "⚠️ 操作确认已过期失效，请取消后重试",
+                            stringResource(R.string.token_expired_warning),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold
@@ -123,7 +126,7 @@ fun DangerousConfirmDialog(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "正在执行操作，请稍候…",
+                            stringResource(R.string.action_executing_wait),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Medium
@@ -145,9 +148,9 @@ fun DangerousConfirmDialog(
                         color = MaterialTheme.colorScheme.onError
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text("执行中…")
+                    Text(stringResource(R.string.action_executing))
                 } else {
-                    Text(confirmLabel)
+                    Text(resolvedConfirmLabel)
                 }
             }
         },
@@ -156,7 +159,7 @@ fun DangerousConfirmDialog(
                 onClick = onDismiss,
                 enabled = !isLoading
             ) {
-                Text("取消")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )
@@ -165,9 +168,10 @@ fun DangerousConfirmDialog(
 @Composable
 fun LoadingProgressDialog(
     show: Boolean,
-    message: String = "正在处理中，请稍候…"
+    message: String? = null
 ) {
     if (!show) return
+    val resolvedMessage = message ?: stringResource(R.string.action_processing_wait)
     Dialog(
         onDismissRequest = {},
         properties = DialogProperties(
@@ -192,7 +196,7 @@ fun LoadingProgressDialog(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = message,
+                    text = resolvedMessage,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
@@ -213,11 +217,11 @@ fun TokenEditorDialog(
     var text by remember(show, initialValue) { mutableStateOf(TextFieldValue(initialValue)) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Gateway Bearer Token", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.token_editor_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Token 将使用 Android Keystore (AES-GCM) 硬件加密保存，明文绝不写入任何文件或调试日志。",
+                    stringResource(R.string.token_keystore_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -225,7 +229,7 @@ fun TokenEditorDialog(
                 MaterialTextField(
                     value = text,
                     onValueChange = { text = it },
-                    label = "Token 密钥",
+                    label = stringResource(R.string.token_secret_label),
                     visualTransformation = PasswordVisualTransformation()
                 )
             }
@@ -235,12 +239,12 @@ fun TokenEditorDialog(
                 onSave(text.text.trim())
                 onDismiss()
             }) {
-                Text("保存")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )
@@ -251,11 +255,12 @@ fun SimpleInputDialog(
     show: Boolean,
     title: String,
     fields: List<Pair<String, Boolean>>, // Label to isPassword
-    confirmLabel: String = "提交",
+    confirmLabel: String? = null,
     onConfirm: (List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
     if (!show) return
+    val resolvedConfirmLabel = confirmLabel ?: stringResource(R.string.action_submit)
     var values by remember(show, fields) { mutableStateOf(fields.map { TextFieldValue("") }) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -279,12 +284,12 @@ fun SimpleInputDialog(
                 onConfirm(values.map { it.text.trim() })
                 onDismiss()
             }) {
-                Text(confirmLabel)
+                Text(resolvedConfirmLabel)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )
@@ -304,18 +309,18 @@ fun RootPermissionDialog(
         icon = {
             Icon(
                 imageVector = Icons.Default.Security,
-                contentDescription = "ROOT 权限",
+                contentDescription = stringResource(R.string.root_perm_icon_desc),
                 tint = MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(40.dp)
             )
         },
         title = {
-            Text("需要 ROOT 超级用户权限", fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.root_perm_title), fontWeight = FontWeight.Bold)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "本应用为 Rclone Magisk 模块的管理中心，必须获得 ROOT 超级用户权限才能与后台网关交互并挂载云存储。",
+                    text = stringResource(R.string.root_perm_desc),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Surface(
@@ -323,7 +328,7 @@ fun RootPermissionDialog(
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
                 ) {
                     Text(
-                        text = "提示：请在系统弹出的授权窗口中选择「允许」。若之前勾选了「拒绝」或未弹出窗口，请打开 Magisk / KernelSU / APatch 管理器，在超级用户列表中为本应用开启权限。",
+                        text = stringResource(R.string.root_perm_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(10.dp)
@@ -343,9 +348,9 @@ fun RootPermissionDialog(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("检查中...")
+                    Text(stringResource(R.string.root_status_checking))
                 } else {
-                    Text("重新获取授权")
+                    Text(stringResource(R.string.root_btn_grant))
                 }
             }
         },
@@ -353,11 +358,11 @@ fun RootPermissionDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onOpenManager != null) {
                     TextButton(onClick = onOpenManager) {
-                        Text("打开管理器")
+                        Text(stringResource(R.string.root_perm_open_manager))
                     }
                 }
                 TextButton(onClick = onExit) {
-                    Text("退出")
+                    Text(stringResource(R.string.action_exit))
                 }
             }
         },

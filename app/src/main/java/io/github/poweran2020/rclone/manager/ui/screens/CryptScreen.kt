@@ -42,7 +42,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import io.github.poweran2020.rclone.manager.GatewayClient
+import io.github.poweran2020.rclone.manager.R
 import io.github.poweran2020.rclone.manager.data.model.CryptProfileItem
 import io.github.poweran2020.rclone.manager.data.model.RemoteItem
 import io.github.poweran2020.rclone.manager.data.model.parseCrypts
@@ -99,7 +101,7 @@ fun CryptScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = "rclone Crypt 加密档案 (${crypts.size})")
+                SectionTitle(text = stringResource(R.string.crypt_list_title, crypts.size))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { loadCrypts() },
@@ -107,7 +109,7 @@ fun CryptScreen(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("刷新")
+                        Text(stringResource(R.string.action_refresh))
                     }
                     Button(
                         onClick = { showCreateDialog = true },
@@ -115,7 +117,7 @@ fun CryptScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("新建加密")
+                        Text(stringResource(R.string.crypt_btn_new))
                     }
                 }
             }
@@ -126,12 +128,10 @@ fun CryptScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
-                    Text("端到端透明加密", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.crypt_info_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 }
                 Text(
-                    "• 基于 rclone crypt 模块，提供文件名与文件内容的客户端加密。\n" +
-                    "• 密码使用 rclone 标准 AES-CTR obscure 算法混淆保护，由 Gateway 加密存储在 Secret Store 中。\n" +
-                    "• API 绝不回显密码明文，仅返回 passwordConfigured 标志。",
+                    stringResource(R.string.crypt_info_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -139,13 +139,13 @@ fun CryptScreen(
         }
 
         if (isLoading) {
-            item { LoadingView(message = "正在加载 Crypt 档案…") }
+            item { LoadingView(message = stringResource(R.string.crypt_loading)) }
         } else if (crypts.isEmpty()) {
             item {
                 EmptyView(
                     icon = Icons.Default.Security,
-                    title = "暂无 Crypt 加密档案",
-                    message = "点击右上角“新建加密”为任意已有远端配置加密层。"
+                    title = stringResource(R.string.crypt_empty_title),
+                    message = stringResource(R.string.crypt_empty_desc)
                 )
             }
         } else {
@@ -163,9 +163,9 @@ fun CryptScreen(
                     val remoteDisplayName = crypt.remoteName
                         ?: remotes.find { it.id == crypt.remoteId }?.name
                         ?: crypt.remoteId
-                    InfoRow(label = "底层远端", value = remoteDisplayName)
-                    InfoRow(label = "底层路径", value = crypt.remotePath)
-                    InfoRow(label = "密码配置", value = if (crypt.passwordConfigured) "已加密存储" else "未设置")
+                    InfoRow(label = stringResource(R.string.crypt_underlying_remote), value = remoteDisplayName)
+                    InfoRow(label = stringResource(R.string.crypt_underlying_path), value = crypt.remotePath)
+                    InfoRow(label = stringResource(R.string.crypt_password_status), value = if (crypt.passwordConfigured) stringResource(R.string.crypt_pass_encrypted) else stringResource(R.string.crypt_pass_not_set))
 
                     Spacer(Modifier.height(8.dp))
                     Button(
@@ -180,7 +180,7 @@ fun CryptScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("测试加密物化与配置")
+                        Text(stringResource(R.string.crypt_btn_test))
                     }
                 }
             }
@@ -222,22 +222,22 @@ fun CreateCryptDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新建 Crypt 加密档案", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.crypt_dialog_create_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                MaterialTextField(value = name, onValueChange = { name = it }, label = "Crypt Profile 名称")
+                MaterialTextField(value = name, onValueChange = { name = it }, label = stringResource(R.string.crypt_profile_name_label))
 
                 ExposedDropdownMenuBox(
                     expanded = remoteDropdownExpanded,
                     onExpandedChange = { remoteDropdownExpanded = !remoteDropdownExpanded },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.name ?: "请选择底层远端"
+                    val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.name ?: stringResource(R.string.crypt_select_remote_placeholder)
                     OutlinedTextField(
                         value = currentRemoteName,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("底层远端") },
+                        label = { Text(stringResource(R.string.crypt_underlying_remote)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = remoteDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -259,11 +259,11 @@ fun CreateCryptDialog(
                     }
                 }
 
-                MaterialTextField(value = remotePath, onValueChange = { remotePath = it }, label = "远端基础路径 (默认 /)")
+                MaterialTextField(value = remotePath, onValueChange = { remotePath = it }, label = stringResource(R.string.crypt_base_path_label))
                 MaterialTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = "加密密码 (可选，掩码保护)",
+                    label = stringResource(R.string.crypt_password_label),
                     visualTransformation = PasswordVisualTransformation()
                 )
             }
@@ -276,11 +276,11 @@ fun CreateCryptDialog(
                     onSubmit(n, selectedRemoteId, remotePath.text.trim(), password.text.trim())
                 }
             ) {
-                Text("创建")
+                Text(stringResource(R.string.action_create))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

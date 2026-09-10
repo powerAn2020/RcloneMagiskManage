@@ -47,7 +47,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import io.github.poweran2020.rclone.manager.GatewayClient
+import io.github.poweran2020.rclone.manager.R
 import io.github.poweran2020.rclone.manager.data.model.GatewayErrorParser
 import io.github.poweran2020.rclone.manager.data.model.SystemInfoItem
 import io.github.poweran2020.rclone.manager.data.model.parseJobs
@@ -130,14 +132,14 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = "系统与服务状态")
+                SectionTitle(text = stringResource(R.string.dashboard_service_status_title))
                 OutlinedButton(
                     onClick = { refreshDashboard() },
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Spacer(Modifier.padding(2.dp))
-                    Text(if (isRefreshing) "刷新中…" else "刷新")
+                    Text(if (isRefreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh))
                 }
             }
         }
@@ -181,7 +183,7 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("启动")
+                        Text(stringResource(R.string.action_start))
                     }
 
                     OutlinedButton(
@@ -205,7 +207,7 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("停止")
+                        Text(stringResource(R.string.action_stop))
                     }
 
                     Button(
@@ -228,7 +230,7 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("重启")
+                        Text(stringResource(R.string.action_restart))
                     }
                 }
                 if (!healthError.isNullOrBlank()) {
@@ -278,7 +280,7 @@ fun DashboardScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "复制日志",
+                                        contentDescription = stringResource(R.string.dashboard_copy_log),
                                         modifier = Modifier.size(14.dp),
                                         tint = MaterialTheme.colorScheme.onErrorContainer
                                     )
@@ -302,7 +304,7 @@ fun DashboardScreen(
                                         .padding(horizontal = 8.dp, vertical = 6.dp)
                                 ) {
                                     Text(
-                                        text = "原始日志：",
+                                        text = stringResource(R.string.dashboard_raw_log_label),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.outline
                                     )
@@ -320,16 +322,16 @@ fun DashboardScreen(
                 }
                 Spacer(Modifier.height(4.dp))
                 systemInfo?.let { info ->
-                    InfoRow(label = "rclone 版本", value = info.rcloneVersion)
-                    InfoRow(label = "Gateway 版本", value = info.gatewayVersion)
-                    InfoRow(label = "Root 提权", value = if (info.root) "已授权" else "未授权")
-                    InfoRow(label = "LAN TLS", value = if (info.lanEnabled) "已启用" else "已禁用 (安全默认)")
+                    InfoRow(label = stringResource(R.string.dashboard_rclone_version), value = info.rcloneVersion)
+                    InfoRow(label = stringResource(R.string.dashboard_gateway_version), value = info.gatewayVersion)
+                    InfoRow(label = stringResource(R.string.dashboard_root_elevate), value = if (info.root) stringResource(R.string.status_authorized) else stringResource(R.string.status_unauthorized))
+                    InfoRow(label = stringResource(R.string.dashboard_lan_tls), value = if (info.lanEnabled) stringResource(R.string.status_enabled) else stringResource(R.string.status_disabled_safe))
                 }
             }
         }
 
         item {
-            SectionTitle(text = "资源与运行统计")
+            SectionTitle(text = stringResource(R.string.dashboard_resources_title))
         }
 
         item {
@@ -342,30 +344,30 @@ fun DashboardScreen(
                     onClick = { onNavigateTab(1) }
                 ) {
                     Icon(Icons.Default.Cloud, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("远端配置", style = MaterialTheme.typography.labelMedium)
-                    Text("$remotesCount 个", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.dashboard_remotes_stat), style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.count_unit, remotesCount), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
                 ContentCard(
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigateTab(3) }
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                    Text("活跃任务", style = MaterialTheme.typography.labelMedium)
-                    Text("$activeJobsCount 个", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.dashboard_active_jobs_stat), style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.count_unit, activeJobsCount), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
                 ContentCard(
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigateTab(4) }
                 ) {
                     Icon(Icons.Default.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-                    Text("活跃挂载", style = MaterialTheme.typography.labelMedium)
-                    Text("$activeMountsCount 个", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.dashboard_active_mounts_stat), style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.count_unit, activeMountsCount), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
         item {
-            SectionTitle(text = "安全凭据")
+            SectionTitle(text = stringResource(R.string.dashboard_security_creds_title))
         }
 
         item {
@@ -377,12 +379,12 @@ fun DashboardScreen(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = if (bearer.isBlank()) "Gateway Token 未配置" else "Gateway Token 已配置",
+                            text = if (bearer.isBlank()) stringResource(R.string.dashboard_token_unconfigured) else stringResource(R.string.dashboard_token_configured),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Token 使用 Android Keystore 加密存储，仅本地持有。",
+                            text = stringResource(R.string.dashboard_token_stored_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -393,15 +395,15 @@ fun DashboardScreen(
                             Button(
                                 onClick = { showAdminGrantDialog = true }
                             ) {
-                                Text("一键配对")
+                                Text(stringResource(R.string.dashboard_btn_auto_pair))
                             }
                             OutlinedButton(onClick = onEditToken) {
-                                Text("设置")
+                                Text(stringResource(R.string.action_setup))
                             }
                         }
                     } else {
                         Button(onClick = onEditToken) {
-                            Text("更换")
+                            Text(stringResource(R.string.action_change))
                         }
                     }
                 }
@@ -409,7 +411,7 @@ fun DashboardScreen(
         }
 
         item {
-            SectionTitle(text = "快捷操作")
+            SectionTitle(text = stringResource(R.string.dashboard_quick_actions))
         }
 
         item {
@@ -423,7 +425,7 @@ fun DashboardScreen(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(Modifier.padding(2.dp))
-                    Text("管理远端")
+                    Text(stringResource(R.string.dashboard_btn_manage_remotes))
                 }
                 Button(
                     modifier = Modifier.weight(1f),
@@ -431,18 +433,16 @@ fun DashboardScreen(
                 ) {
                     Icon(Icons.Default.Storage, contentDescription = null)
                     Spacer(Modifier.padding(2.dp))
-                    Text("浏览文件")
+                    Text(stringResource(R.string.dashboard_btn_browse_files))
                 }
             }
         }
 
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
-                Text("安全与控制架构声明", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.dashboard_security_arch_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Text(
-                    "• App 仅调用固定的 typed request 客户端合约，严禁暴露 raw rclone RC。\n" +
-                    "• 密码/Token 均在 Gateway 侧使用 XChaCha20-Poly1305 加密保存，API 绝不返回明文。\n" +
-                    "• 文件删除、远端删除均受到 60 秒一次性确认令牌与 dry-run 保护。",
+                    stringResource(R.string.dashboard_security_arch_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -453,9 +453,9 @@ fun DashboardScreen(
     if (showAdminGrantDialog) {
         AlertDialog(
             onDismissRequest = { showAdminGrantDialog = false },
-            title = { Text("配对授权确认", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            title = { Text(stringResource(R.string.dashboard_pair_dialog_title), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = {
-                Text("是否授予本地伴侣端管理员权限？\n\n• 常规权限：允许文件、远端、挂载管理与任务调度（推荐日常使用）。\n• 管理员特权：额外允许导出云存储明文密钥和清空审计日志。")
+                Text(stringResource(R.string.dashboard_pair_dialog_desc))
             },
             confirmButton = {
                 Button(
@@ -474,12 +474,12 @@ fun DashboardScreen(
                         }
                     }
                 ) {
-                    Text("授予管理员特权")
+                    Text(stringResource(R.string.dashboard_pair_grant_admin))
                 }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton("取消", onClick = { showAdminGrantDialog = false })
+                    TextButton(stringResource(R.string.action_cancel), onClick = { showAdminGrantDialog = false })
                     OutlinedButton(
                         onClick = {
                             showAdminGrantDialog = false
@@ -496,7 +496,7 @@ fun DashboardScreen(
                             }
                         }
                     ) {
-                        Text("仅常规权限")
+                        Text(stringResource(R.string.dashboard_pair_grant_regular))
                     }
                 }
             }

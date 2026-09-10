@@ -1,11 +1,18 @@
 package io.github.poweran2020.rclone.manager.data
 
 import android.content.Context
+import io.github.poweran2020.rclone.manager.R
 
-enum class ThemeMode(val title: String) {
-    SYSTEM("跟随系统"),
-    LIGHT("浅色模式"),
-    DARK("深色模式")
+enum class ThemeMode(val titleResId: Int) {
+    SYSTEM(R.string.theme_system),
+    LIGHT(R.string.theme_light),
+    DARK(R.string.theme_dark)
+}
+
+enum class AppLanguage(val titleResId: Int, val code: String) {
+    SYSTEM(R.string.lang_system, ""),
+    ZH(R.string.lang_zh, "zh"),
+    EN(R.string.lang_en, "en")
 }
 
 class AppPreferences(context: Context) {
@@ -18,5 +25,14 @@ class AppPreferences(context: Context) {
 
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString("theme_mode", mode.name).apply()
+    }
+
+    fun getAppLanguage(): AppLanguage {
+        val name = prefs.getString("app_language", AppLanguage.SYSTEM.name) ?: AppLanguage.SYSTEM.name
+        return runCatching { AppLanguage.valueOf(name) }.getOrDefault(AppLanguage.SYSTEM)
+    }
+
+    fun setAppLanguage(lang: AppLanguage) {
+        prefs.edit().putString("app_language", lang.name).apply()
     }
 }

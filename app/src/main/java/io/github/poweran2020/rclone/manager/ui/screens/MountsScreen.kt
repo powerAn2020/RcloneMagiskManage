@@ -47,6 +47,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import io.github.poweran2020.rclone.manager.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -137,7 +139,7 @@ fun MountsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = "挂载管理 (${mounts.size})")
+                SectionTitle(text = "${stringResource(R.string.mounts_title)} (${mounts.size})")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { loadMounts() },
@@ -145,7 +147,7 @@ fun MountsScreen(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("刷新")
+                        Text(stringResource(R.string.action_refresh))
                     }
                     Button(
                         onClick = { showCreateDialog = true },
@@ -153,14 +155,14 @@ fun MountsScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("创建挂载")
+                        Text(stringResource(R.string.mounts_btn_create))
                     }
                 }
             }
         }
 
         if (isLoading) {
-            item { LoadingView(message = "正在获取挂载列表…") }
+            item { LoadingView(message = stringResource(R.string.status_loading)) }
         } else if (mounts.isEmpty()) {
             item {
                 EmptyView(
@@ -261,7 +263,7 @@ fun MountsScreen(
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("启动挂载")
+                                Text(stringResource(R.string.mount_btn_start))
                             }
                         } else {
                             OutlinedButton(
@@ -277,7 +279,7 @@ fun MountsScreen(
                             ) {
                                 Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("停止挂载")
+                                Text(stringResource(R.string.mount_btn_stop))
                             }
                         }
 
@@ -292,7 +294,7 @@ fun MountsScreen(
                         ) {
                             Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("编辑")
+                            Text(stringResource(R.string.action_edit))
                         }
 
                         IconButton(
@@ -300,7 +302,7 @@ fun MountsScreen(
                         ) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = "删除挂载",
+                                contentDescription = stringResource(R.string.action_delete),
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
@@ -312,7 +314,7 @@ fun MountsScreen(
 
     if (showCreateDialog) {
         MountEditDialog(
-            title = "创建挂载 Profile",
+            title = stringResource(R.string.mount_edit_title_create),
             initialMount = null,
             remotes = remotes,
             client = client,
@@ -335,7 +337,7 @@ fun MountsScreen(
 
     mountToEdit?.let { editTarget ->
         MountEditDialog(
-            title = "编辑挂载 Profile: ${editTarget.name}",
+            title = "${stringResource(R.string.mount_edit_title_edit)}: ${editTarget.name}",
             initialMount = editTarget,
             remotes = remotes,
             client = client,
@@ -373,11 +375,9 @@ fun MountsScreen(
     mountToDelete?.let { delTarget ->
         DangerousConfirmDialog(
             show = true,
-            title = "删除挂载: ${delTarget.name}",
-            message = "确定要删除此挂载 Profile 吗？" +
-                    (if (delTarget.status.uppercase() == "RUNNING") "\n当前挂载正在运行，删除将先强制停止后台 Worker 进程并卸载挂载点。" else "") +
-                    "\n删除后配置无法撤销。",
-            confirmLabel = "确认删除",
+            title = "${stringResource(R.string.mount_delete_title)}: ${delTarget.name}",
+            message = stringResource(R.string.mount_delete_message),
+            confirmLabel = stringResource(R.string.action_confirm),
             isLoading = isDeleting,
             onConfirm = {
                 scope.launch {
@@ -458,11 +458,11 @@ fun MountEditDialog(
                             }
                         }
                     },
-                    label = "Profile 名称 (英文标识符)"
+                    label = stringResource(R.string.mount_field_name)
                 )
 
                 // Visibility & Isolation Mode Selector
-                Text("挂载模式", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.mount_mode_label), style = MaterialTheme.typography.labelMedium)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -478,7 +478,7 @@ fun MountEditDialog(
                         },
                         label = {
                             Text(
-                                text = "全局挂载",
+                                text = stringResource(R.string.mount_mode_global),
                                 maxLines = 1,
                                 softWrap = false,
                                 style = MaterialTheme.typography.labelMedium
@@ -505,7 +505,7 @@ fun MountEditDialog(
                         },
                         label = {
                             Text(
-                                text = "应用专属",
+                                text = stringResource(R.string.mount_mode_isolated),
                                 maxLines = 1,
                                 softWrap = false,
                                 style = MaterialTheme.typography.labelMedium
@@ -528,9 +528,9 @@ fun MountEditDialog(
                         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                     ) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("应用沙盒隔离配置", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.mount_isolated_card_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             Text(
-                                "直接挂载至目标 App 专属私有目录，仅该 App 进程享有读写权限，不向全局公共存储广播。",
+                                stringResource(R.string.mount_isolated_card_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -542,11 +542,11 @@ fun MountEditDialog(
                                     val trimmed = name.text.trim().ifBlank { "mount" }
                                     mountPoint = TextFieldValue("/data/data/$pkg/files/rclone/$trimmed")
                                 },
-                                label = { Text("目标应用包名 (Package Name)") },
+                                label = { Text(stringResource(R.string.mount_target_package_label)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 trailingIcon = {
                                     IconButton(onClick = { showAppPicker = true }) {
-                                        Icon(Icons.Default.Apps, contentDescription = "选择已安装应用", tint = MaterialTheme.colorScheme.primary)
+                                        Icon(Icons.Default.Apps, contentDescription = stringResource(R.string.mount_select_app_tooltip), tint = MaterialTheme.colorScheme.primary)
                                     }
                                 },
                                 textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
@@ -561,12 +561,12 @@ fun MountEditDialog(
                     onExpandedChange = { remoteDropdownExpanded = !remoteDropdownExpanded },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.name ?: "请选择远端"
+                    val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.name ?: stringResource(R.string.mount_associated_remote)
                     OutlinedTextField(
                         value = currentRemoteName,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("关联远端") },
+                        label = { Text(stringResource(R.string.mount_associated_remote)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = remoteDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()

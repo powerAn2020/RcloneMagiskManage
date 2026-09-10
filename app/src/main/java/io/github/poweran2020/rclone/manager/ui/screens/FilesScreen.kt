@@ -75,7 +75,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import io.github.poweran2020.rclone.manager.GatewayClient
+import io.github.poweran2020.rclone.manager.R
 import io.github.poweran2020.rclone.manager.data.model.FileItem
 import io.github.poweran2020.rclone.manager.data.model.LocalFileItem
 import io.github.poweran2020.rclone.manager.data.model.RemoteItem
@@ -233,10 +235,10 @@ fun FilesScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
-                value = selectedRemote?.let { "${it.name} (${it.type})" } ?: "选择远端",
+                value = selectedRemote?.let { "${it.name} (${it.type})" } ?: stringResource(R.string.files_select_remote),
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("当前远端") },
+                label = { Text(stringResource(R.string.files_current_remote)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = remoteDropdownExpanded) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -277,7 +279,7 @@ fun FilesScreen(
                 },
                 enabled = currentPath != "/"
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回上一层")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.files_back_parent))
             }
 
             val pathSegments = remember(currentPath) {
@@ -293,7 +295,7 @@ fun FilesScreen(
                 FilterChip(
                     selected = currentPath == "/",
                     onClick = { selectedRemote?.let { loadDirectory(it.id, "/") } },
-                    label = { Text("根目录 /") }
+                    label = { Text(stringResource(R.string.files_root_dir)) }
                 )
                 var accumulated = ""
                 pathSegments.forEach { seg ->
@@ -318,7 +320,7 @@ fun FilesScreen(
                 }
                 selectedRemote?.let { loadDirectory(it.id, currentPath) }
             }) {
-                Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
             }
         }
 
@@ -340,7 +342,7 @@ fun FilesScreen(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "安全模式已开启：写操作（新建、上传、移动、删除等）已被锁定禁用。",
+                        stringResource(R.string.files_safemode_locked),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -368,7 +370,7 @@ fun FilesScreen(
             ) {
                 Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("新建目录")
+                Text(stringResource(R.string.files_btn_mkdir))
             }
 
             Button(
@@ -385,7 +387,7 @@ fun FilesScreen(
             ) {
                 Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("上传文件")
+                Text(stringResource(R.string.files_btn_upload))
             }
         }
 
@@ -411,11 +413,11 @@ fun FilesScreen(
         }
 
         if (isLoading) {
-            LoadingView(message = "正在读取目录内容…")
+            LoadingView(message = stringResource(R.string.files_loading))
         } else if (selectedRemote == null) {
-            EmptyView(title = "请先选择远端", message = "在顶部选择需要浏览的远端存储。")
+            EmptyView(title = stringResource(R.string.files_empty_no_remote_title), message = stringResource(R.string.files_empty_no_remote_desc))
         } else if (files.isEmpty()) {
-            EmptyView(icon = Icons.Default.Folder, title = "该目录为空", message = "当前目录下没有找到任何文件或子目录。")
+            EmptyView(icon = Icons.Default.Folder, title = stringResource(R.string.files_empty_dir_title), message = stringResource(R.string.files_empty_dir_desc))
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -459,7 +461,7 @@ fun FilesScreen(
                             }
 
                             IconButton(onClick = { menuExpanded = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
+                                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.files_more_actions))
                             }
 
                             DropdownMenu(
@@ -468,7 +470,7 @@ fun FilesScreen(
                             ) {
                                 if (!file.isDir) {
                                     DropdownMenuItem(
-                                        text = { Text("下载到本地") },
+                                        text = { Text(stringResource(R.string.files_action_download_local)) },
                                         leadingIcon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
                                         onClick = {
                                             menuExpanded = false
@@ -477,7 +479,7 @@ fun FilesScreen(
                                     )
                                 }
                                 DropdownMenuItem(
-                                    text = { Text("复制" + if (isSafeMode) " (安全模式禁用)" else "") },
+                                    text = { Text(stringResource(R.string.action_copy) + if (isSafeMode) stringResource(R.string.files_safemode_disabled_suffix) else "") },
                                     leadingIcon = { Icon(Icons.Default.DriveFileMove, contentDescription = null) },
                                     enabled = !isSafeMode,
                                     onClick = {
@@ -490,7 +492,7 @@ fun FilesScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("移动" + if (isSafeMode) " (安全模式禁用)" else "") },
+                                    text = { Text(stringResource(R.string.action_move) + if (isSafeMode) stringResource(R.string.files_safemode_disabled_suffix) else "") },
                                     leadingIcon = { Icon(Icons.Default.DriveFileMove, contentDescription = null) },
                                     enabled = !isSafeMode,
                                     onClick = {
@@ -505,7 +507,7 @@ fun FilesScreen(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            "删除 (带预览)" + if (isSafeMode) " (安全模式禁用)" else "",
+                                            stringResource(R.string.files_action_delete_preview) + if (isSafeMode) stringResource(R.string.files_safemode_disabled_suffix) else "",
                                             color = if (isSafeMode) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error
                                         )
                                     },
@@ -563,9 +565,9 @@ fun FilesScreen(
         var dirName by remember { mutableStateOf(TextFieldValue("")) }
         AlertDialog(
             onDismissRequest = { showMkdirDialog = false },
-            title = { Text("新建目录", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.files_btn_mkdir), fontWeight = FontWeight.Bold) },
             text = {
-                MaterialTextField(value = dirName, onValueChange = { dirName = it }, label = "目录名称")
+                MaterialTextField(value = dirName, onValueChange = { dirName = it }, label = stringResource(R.string.files_mkdir_name_label))
             },
             confirmButton = {
                 Button(
@@ -590,10 +592,10 @@ fun FilesScreen(
                             }
                         }
                     }
-                ) { Text("创建") }
+                ) { Text(stringResource(R.string.action_create)) }
             },
             dismissButton = {
-                TextButton(onClick = { showMkdirDialog = false }) { Text("取消") }
+                TextButton(onClick = { showMkdirDialog = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -644,13 +646,13 @@ fun FilesScreen(
         val previewFullPath = if (targetDir.endsWith("/${file.name}")) targetDir else "$targetDir/${file.name}"
         AlertDialog(
             onDismissRequest = { downloadTargetFile = null },
-            title = { Text("下载文件", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.files_download_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("远端源路径: $fullPath", style = MaterialTheme.typography.bodySmall)
-                    MaterialTextField(value = localDir, onValueChange = { localDir = it }, label = "保存到本地目录")
+                    Text(stringResource(R.string.files_download_source, fullPath), style = MaterialTheme.typography.bodySmall)
+                    MaterialTextField(value = localDir, onValueChange = { localDir = it }, label = stringResource(R.string.files_download_local_dir))
                     Text(
-                        "完整保存路径: $previewFullPath",
+                        stringResource(R.string.files_download_preview, previewFullPath),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -688,10 +690,10 @@ fun FilesScreen(
                             }
                         }
                     }
-                ) { Text("下载") }
+                ) { Text(stringResource(R.string.action_download)) }
             },
             dismissButton = {
-                TextButton(onClick = { downloadTargetFile = null }) { Text("取消") }
+                TextButton(onClick = { downloadTargetFile = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -701,11 +703,11 @@ fun FilesScreen(
         var destInput by remember { mutableStateOf(TextFieldValue("${selectedRemote?.name}:$currentPath/copy_${file.name}")) }
         AlertDialog(
             onDismissRequest = { moveTargetFile = null },
-            title = { Text(if (isCopy) "复制文件" else "移动文件", fontWeight = FontWeight.Bold) },
+            title = { Text(if (isCopy) stringResource(R.string.files_copy_file_title) else stringResource(R.string.files_move_file_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("源文件: $fullPath", style = MaterialTheme.typography.bodySmall)
-                    MaterialTextField(value = destInput, onValueChange = { destInput = it }, label = "目标路径 (remote:path)")
+                    Text(stringResource(R.string.files_source_file_label, fullPath), style = MaterialTheme.typography.bodySmall)
+                    MaterialTextField(value = destInput, onValueChange = { destInput = it }, label = stringResource(R.string.files_target_path_label))
                 }
             },
             confirmButton = {
@@ -732,10 +734,10 @@ fun FilesScreen(
                             }
                         }
                     }
-                ) { Text("执行") }
+                ) { Text(stringResource(R.string.action_confirm_execute)) }
             },
             dismissButton = {
-                TextButton(onClick = { moveTargetFile = null }) { Text("取消") }
+                TextButton(onClick = { moveTargetFile = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -744,10 +746,10 @@ fun FilesScreen(
         val fullPath = if (currentPath == "/") "/${file.name}" else "$currentPath/${file.name}"
         DangerousConfirmDialog(
             show = true,
-            title = "确认删除: ${file.name}",
+            title = stringResource(R.string.files_confirm_delete_title, file.name),
             message = summary,
             tokenBadge = token,
-            confirmLabel = "确认删除",
+            confirmLabel = stringResource(R.string.action_delete),
             isLoading = isDeleting,
             onConfirm = {
                 if (isSafeMode) {
@@ -783,7 +785,7 @@ fun FilesScreen(
 
     LoadingProgressDialog(
         show = isCalculatingPreview,
-        message = "正在计算删除影响范围与令牌…"
+        message = stringResource(R.string.files_calculating_delete_token)
     )
 }
 
@@ -822,7 +824,7 @@ fun UploadFileDialog(
         modifier = Modifier.widthIn(min = 320.dp, max = 560.dp),
         title = {
             Text(
-                text = "上传文件到当前目录",
+                text = stringResource(R.string.files_upload_dialog_title),
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleLarge
             )
@@ -842,13 +844,13 @@ fun UploadFileDialog(
                     Tab(
                         selected = mode == 0,
                         onClick = { mode = 0 },
-                        text = { Text("文件列表模式") },
+                        text = { Text(stringResource(R.string.files_upload_mode_list)) },
                         icon = { Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                     Tab(
                         selected = mode == 1,
                         onClick = { mode = 1 },
-                        text = { Text("手动输入路径") },
+                        text = { Text(stringResource(R.string.files_upload_mode_manual)) },
                         icon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                 }
@@ -865,8 +867,8 @@ fun UploadFileDialog(
                             "Download" to "/data/media/0/Download",
                             "Documents" to "/data/media/0/Documents",
                             "DCIM" to "/data/media/0/DCIM",
-                            "内部存储" to "/data/media/0",
-                            "根目录" to "/"
+                            stringResource(R.string.files_shortcut_internal_storage) to "/data/media/0",
+                            stringResource(R.string.files_shortcut_root) to "/"
                         )
                         shortcuts.forEach { (label, path) ->
                             FilterChip(
@@ -898,7 +900,7 @@ fun UploadFileDialog(
                                 enabled = !isRoot,
                                 modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一级", modifier = Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.files_parent_dir), modifier = Modifier.size(18.dp))
                             }
                             Spacer(Modifier.width(4.dp))
                             Text(
@@ -913,7 +915,7 @@ fun UploadFileDialog(
                                 onClick = { refreshLocalDir(currentLocalDir) },
                                 modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "刷新", modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh), modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -932,7 +934,7 @@ fun UploadFileDialog(
                         } else if (localItems.isEmpty()) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text(
-                                    "目录为空或无读取权限",
+                                    stringResource(R.string.files_empty_local_dir),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -986,7 +988,7 @@ fun UploadFileDialog(
                                             if (isSelected) {
                                                 Icon(
                                                     Icons.Default.Check,
-                                                    contentDescription = "已选择",
+                                                    contentDescription = stringResource(R.string.files_selected),
                                                     tint = MaterialTheme.colorScheme.primary,
                                                     modifier = Modifier.size(20.dp)
                                                 )
@@ -1018,7 +1020,7 @@ fun UploadFileDialog(
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    text = "已选: ${selectedItem!!.name} (${formatBytes(selectedItem!!.size)})",
+                                    text = stringResource(R.string.files_selected_prompt, selectedItem!!.name, formatBytes(selectedItem!!.size)),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Medium,
                                     maxLines = 1,
@@ -1028,19 +1030,19 @@ fun UploadFileDialog(
                         }
                     } else {
                         Text(
-                            text = "提示: 点击文件夹进入，点击文件即可选中",
+                            text = stringResource(R.string.files_upload_tip),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
                     // Manual mode
-                    Text("输入本地文件绝对路径 (Root 提权读取):", style = MaterialTheme.typography.bodySmall)
-                    MaterialTextField(value = localPathInput, onValueChange = { localPathInput = it }, label = "本地路径")
+                    Text(stringResource(R.string.files_upload_manual_hint), style = MaterialTheme.typography.bodySmall)
+                    MaterialTextField(value = localPathInput, onValueChange = { localPathInput = it }, label = stringResource(R.string.files_upload_local_path_label))
                 }
 
                 Text(
-                    text = "目标远端路径: $currentRemotePath",
+                    text = stringResource(R.string.files_upload_target_path, currentRemotePath),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1057,11 +1059,11 @@ fun UploadFileDialog(
                 },
                 enabled = canUpload
             ) {
-                Text("开始上传")
+                Text(stringResource(R.string.files_btn_start_upload))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }
@@ -1123,7 +1125,7 @@ fun TransferProgressCard(
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "${if (transfer.isUpload) "上传" else "下载"}: ${transfer.fileName}",
+                        text = "${if (transfer.isUpload) "Upload" else "Download"}: ${transfer.fileName}",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -1131,20 +1133,20 @@ fun TransferProgressCard(
                     )
                     Text(
                         text = when (transfer.state) {
-                            "QUEUED" -> "等待调度中..."
+                            "QUEUED" -> stringResource(R.string.files_transfer_queued)
                             "RUNNING" -> {
                                 if (transfer.totalBytes != null && transfer.totalBytes > 0) {
                                     val percent = ((transfer.progress ?: 0f) * 100).toInt()
                                     "${formatBytes(transfer.transferredBytes)} / ${formatBytes(transfer.totalBytes)} ($percent%)"
                                 } else if (transfer.transferredBytes > 0) {
-                                    "已传输 ${formatBytes(transfer.transferredBytes)}"
+                                    stringResource(R.string.files_transfer_transferred, formatBytes(transfer.transferredBytes))
                                 } else {
-                                    "正在传输..."
+                                    stringResource(R.string.files_transfer_running)
                                 }
                             }
-                            "SUCCESS" -> "传输完成" + if (transfer.totalBytes != null && transfer.totalBytes > 0) " (${formatBytes(transfer.totalBytes)})" else ""
-                            "FAILED" -> "传输失败: ${transfer.errorMessage ?: "未知错误"}"
-                            "CANCELLED" -> "传输已取消"
+                            "SUCCESS" -> stringResource(R.string.files_transfer_completed) + if (transfer.totalBytes != null && transfer.totalBytes > 0) " (${formatBytes(transfer.totalBytes)})" else ""
+                            "FAILED" -> stringResource(R.string.files_transfer_failed, transfer.errorMessage ?: "")
+                            "CANCELLED" -> stringResource(R.string.files_transfer_cancelled)
                             else -> transfer.state
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -1165,7 +1167,7 @@ fun TransferProgressCard(
                     ) {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = "关闭",
+                            contentDescription = stringResource(R.string.action_close),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -1174,7 +1176,7 @@ fun TransferProgressCard(
                         onClick = onCancel,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                     ) {
-                        Text("取消", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }

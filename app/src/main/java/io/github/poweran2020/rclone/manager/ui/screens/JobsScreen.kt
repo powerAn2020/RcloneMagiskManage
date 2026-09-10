@@ -70,7 +70,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
+import androidx.compose.ui.res.stringResource
 import io.github.poweran2020.rclone.manager.GatewayClient
+import io.github.poweran2020.rclone.manager.R
 import io.github.poweran2020.rclone.manager.data.model.JobItem
 import io.github.poweran2020.rclone.manager.data.model.JobRunItem
 import io.github.poweran2020.rclone.manager.data.model.RemoteItem
@@ -149,7 +151,7 @@ fun JobsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = "任务调度中心 (${jobs.size})")
+                SectionTitle(text = stringResource(R.string.jobs_center_title, jobs.size))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { loadJobs() },
@@ -157,7 +159,7 @@ fun JobsScreen(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("刷新")
+                        Text(stringResource(R.string.action_refresh))
                     }
                     Button(
                         onClick = {
@@ -168,20 +170,20 @@ fun JobsScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("创建任务")
+                        Text(stringResource(R.string.jobs_btn_create))
                     }
                 }
             }
         }
 
         if (isLoading) {
-            item { LoadingView(message = "正在获取任务列表…") }
+            item { LoadingView(message = stringResource(R.string.jobs_loading)) }
         } else if (jobs.isEmpty()) {
             item {
                 EmptyView(
                     icon = Icons.Default.PlayArrow,
-                    title = "暂无任务",
-                    message = "点击右上角“创建任务”以添加同步、备份或复制任务。"
+                    title = stringResource(R.string.jobs_empty_title),
+                    message = stringResource(R.string.jobs_empty_message)
                 )
             }
         } else {
@@ -203,20 +205,20 @@ fun JobsScreen(
 
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "源: ${job.source}",
+                        text = stringResource(R.string.jobs_source_prefix, job.source),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     if (job.destination.isNotBlank()) {
                         Text(
-                            text = "目标: ${job.destination}",
+                            text = stringResource(R.string.jobs_dest_prefix, job.destination),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
                     }
                     job.schedule?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }?.let {
                         Text(
-                            text = "计划调度: $it" + (job.nextRunAt?.let { t -> " · 下次执行: ${formatEpochTime(t)}" } ?: ""),
+                            text = stringResource(R.string.jobs_schedule_prefix, it) + (job.nextRunAt?.let { t -> stringResource(R.string.jobs_next_run_prefix, formatEpochTime(t)) } ?: ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -245,7 +247,7 @@ fun JobsScreen(
                                 ) {
                                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(2.dp))
-                                    Text("启动")
+                                    Text(stringResource(R.string.action_start))
                                 }
                             }
                             "RUNNING" -> {
@@ -262,7 +264,7 @@ fun JobsScreen(
                                 ) {
                                     Icon(Icons.Default.Pause, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(2.dp))
-                                    Text("暂停")
+                                    Text(stringResource(R.string.jobs_action_pause))
                                 }
                                 Button(
                                     onClick = {
@@ -277,7 +279,7 @@ fun JobsScreen(
                                 ) {
                                     Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(2.dp))
-                                    Text("取消")
+                                    Text(stringResource(R.string.action_cancel))
                                 }
                             }
                             "PAUSED" -> {
@@ -294,7 +296,7 @@ fun JobsScreen(
                                 ) {
                                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(2.dp))
-                                    Text("恢复")
+                                    Text(stringResource(R.string.jobs_action_resume))
                                 }
                             }
                         }
@@ -313,7 +315,7 @@ fun JobsScreen(
                             ) {
                                 Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(2.dp))
-                                Text("重试")
+                                Text(stringResource(R.string.action_retry))
                             }
                         }
 
@@ -333,7 +335,7 @@ fun JobsScreen(
                         ) {
                             Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(2.dp))
-                            Text("历史")
+                            Text(stringResource(R.string.job_btn_history))
                         }
 
                         OutlinedButton(
@@ -351,7 +353,7 @@ fun JobsScreen(
                         ) {
                             Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(2.dp))
-                            Text("日志")
+                            Text(stringResource(R.string.job_btn_logs))
                         }
 
                         if (job.status.uppercase() in setOf("CREATED", "SUCCESS", "FAILED", "CANCELLED")) {
@@ -366,7 +368,7 @@ fun JobsScreen(
                             ) {
                                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(2.dp))
-                                Text("删除")
+                                Text(stringResource(R.string.action_delete))
                             }
                         }
                     }
@@ -379,9 +381,9 @@ fun JobsScreen(
     jobToDelete?.let { target ->
         DangerousConfirmDialog(
             show = true,
-            title = "确认删除任务: ${target.type} (${target.id.take(8)})",
-            message = "确定要删除该任务吗？此操作不可撤销，关联的任务配置与历史执行记录将被清除。\n\n源: ${target.source}\n目标: ${target.destination}",
-            confirmLabel = "删除任务",
+            title = stringResource(R.string.jobs_delete_dialog_title, target.type, target.id.take(8)),
+            message = stringResource(R.string.jobs_delete_dialog_msg, target.source, target.destination),
+            confirmLabel = stringResource(R.string.jobs_delete_btn_confirm),
             isLoading = isDeletingJob,
             onConfirm = {
                 scope.launch {
@@ -434,10 +436,10 @@ fun JobsScreen(
     selectedRunsJob?.let { job ->
         AlertDialog(
             onDismissRequest = { selectedRunsJob = null },
-            title = { Text("执行历史: ${job.type} (${job.id.take(8)})", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.jobs_history_title, job.type, job.id.take(8)), fontWeight = FontWeight.Bold) },
             text = {
                 if (jobRunsList.isEmpty()) {
-                    Text("暂无执行记录。")
+                    Text(stringResource(R.string.jobs_history_empty))
                 } else {
                     LazyColumn(
                         modifier = Modifier.height(300.dp),
@@ -452,33 +454,33 @@ fun JobsScreen(
                                     Text("状态", style = MaterialTheme.typography.labelSmall)
                                     StatusBadge(status = run.state)
                                 }
-                                run.startedAt?.let { InfoRow(label = "开始时间", value = formatEpochTime(it)) }
-                                run.finishedAt?.let { InfoRow(label = "结束时间", value = formatEpochTime(it)) }
+                                run.startedAt?.let { InfoRow(label = stringResource(R.string.jobs_history_start_time), value = formatEpochTime(it)) }
+                                run.finishedAt?.let { InfoRow(label = stringResource(R.string.jobs_history_end_time), value = formatEpochTime(it)) }
                                 run.transferredBytes?.let { bytes ->
                                     val text = if (bytes == 0L && run.state == "SUCCESS") {
-                                        "0 B (文件已存在，已跳过传输)"
+                                        "0 B"
                                     } else {
                                         formatBytes(bytes)
                                     }
-                                    InfoRow(label = "已传输体积", value = text)
+                                    InfoRow(label = stringResource(R.string.jobs_history_transferred_bytes), value = text)
                                 }
                                 run.transferredFiles?.let { files ->
                                     val text = if (files == 0L && run.state == "SUCCESS") {
-                                        "0 个 (无新增文件)"
+                                        stringResource(R.string.count_unit, 0)
                                     } else {
-                                        "$files 个"
+                                        stringResource(R.string.count_unit, files)
                                     }
-                                    InfoRow(label = "已传输文件", value = text)
+                                    InfoRow(label = stringResource(R.string.jobs_history_transferred_files), value = text)
                                 }
                                 val err = run.errorMessage?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
                                 if (err != null) {
                                     Text(
-                                        text = "错误: $err",
+                                        text = "${stringResource(R.string.jobs_history_error)}: $err",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.error
                                     )
                                 } else {
-                                    InfoRow(label = "错误", value = "无")
+                                    InfoRow(label = stringResource(R.string.jobs_history_error), value = stringResource(R.string.jobs_history_none))
                                 }
                             }
                         }
@@ -486,7 +488,7 @@ fun JobsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { selectedRunsJob = null }) { Text("关闭") }
+                TextButton(onClick = { selectedRunsJob = null }) { Text(stringResource(R.string.action_close)) }
             }
         )
     }
@@ -516,7 +518,7 @@ fun JobsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("任务日志", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.jobs_log_title), fontWeight = FontWeight.Bold)
                         Text(
                             text = "${job.type.uppercase()} • ${job.id.take(8)}",
                             style = MaterialTheme.typography.bodySmall,
@@ -575,7 +577,7 @@ fun JobsScreen(
                                 .weight(1f),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("(日志为空或尚无输出)", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.jobs_log_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else {
                         when (viewMode) {
@@ -794,7 +796,7 @@ fun JobsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { viewingLogJob = null }) { Text("关闭") }
+                TextButton(onClick = { viewingLogJob = null }) { Text(stringResource(R.string.action_close)) }
             }
         )
     }
@@ -848,7 +850,7 @@ fun CreateJobDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("创建任务", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.jobs_dialog_create_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier
@@ -866,7 +868,7 @@ fun CreateJobDialog(
                         value = type,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("任务类型") },
+                        label = { Text(stringResource(R.string.jobs_type_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -889,7 +891,7 @@ fun CreateJobDialog(
                 }
 
                 RclonePathPickerField(
-                    label = "源路径",
+                    label = stringResource(R.string.jobs_source_label),
                     value = source,
                     onValueChange = { source = it },
                     remotes = remotes,
@@ -900,7 +902,7 @@ fun CreateJobDialog(
 
                 if (type != "delete") {
                     RclonePathPickerField(
-                        label = "目标路径",
+                        label = stringResource(R.string.jobs_dest_label),
                         value = destination,
                         onValueChange = { destination = it },
                         remotes = remotes,
@@ -920,7 +922,7 @@ fun CreateJobDialog(
                         value = schedulePresets[selectedScheduleIndex].first,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("计划调度") },
+                        label = { Text(stringResource(R.string.jobs_schedule_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = scheduleDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -960,7 +962,7 @@ fun CreateJobDialog(
                         value = networkPolicy,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("网络策略限制") },
+                        label = { Text(stringResource(R.string.jobs_net_policy_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = netDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -992,7 +994,7 @@ fun CreateJobDialog(
                         value = batteryPolicy,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("电量策略限制") },
+                        label = { Text(stringResource(R.string.jobs_bat_policy_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = batDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1019,24 +1021,24 @@ fun CreateJobDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Dry-Run (演练模拟，不改动数据)")
+                    Text(stringResource(R.string.jobs_dry_run_label))
                     Switch(checked = dryRun, onCheckedChange = { dryRun = it })
                 }
 
                 // Options
-                Text("高级并发与限速选项", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.jobs_advanced_options), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MaterialTextField(value = transfers, onValueChange = { transfers = it }, label = "Transfers (1..32)", modifier = Modifier.weight(1f))
                     MaterialTextField(value = checkers, onValueChange = { checkers = it }, label = "Checkers (1..64)", modifier = Modifier.weight(1f))
                 }
-                MaterialTextField(value = bwLimit, onValueChange = { bwLimit = it }, label = "带宽限速 (如 10M, 可选)")
+                MaterialTextField(value = bwLimit, onValueChange = { bwLimit = it }, label = stringResource(R.string.jobs_bw_limit_label))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("覆盖同名文件 (Overwrite)")
+                    Text(stringResource(R.string.jobs_overwrite_label))
                     Switch(checked = overwrite, onCheckedChange = { overwrite = it })
                 }
 
@@ -1046,7 +1048,7 @@ fun CreateJobDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("删除排除的文件 (deleteExcluded)")
+                        Text(stringResource(R.string.jobs_delete_excluded_label))
                         Switch(checked = deleteExcluded, onCheckedChange = { deleteExcluded = it })
                     }
                 }
@@ -1084,11 +1086,11 @@ fun CreateJobDialog(
                     )
                 }
             ) {
-                Text("创建")
+                Text(stringResource(R.string.action_create))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

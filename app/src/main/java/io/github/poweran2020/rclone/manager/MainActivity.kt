@@ -1,11 +1,12 @@
 package io.github.poweran2020.rclone.manager
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import io.github.poweran2020.rclone.manager.data.AppPreferences
-import io.github.poweran2020.rclone.manager.data.ThemeMode
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,7 +22,6 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -30,9 +30,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,8 +39,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.topjohnwu.superuser.Shell
+import io.github.poweran2020.rclone.manager.data.AppLanguage
+import io.github.poweran2020.rclone.manager.data.AppPreferences
+import io.github.poweran2020.rclone.manager.data.ThemeMode
 import io.github.poweran2020.rclone.manager.ui.component.RootPermissionDialog
 import io.github.poweran2020.rclone.manager.ui.component.TokenEditorDialog
 import io.github.poweran2020.rclone.manager.ui.screens.CryptScreen
@@ -53,7 +58,7 @@ import io.github.poweran2020.rclone.manager.ui.screens.RemotesScreen
 import io.github.poweran2020.rclone.manager.ui.screens.SecurityScreen
 import io.github.poweran2020.rclone.manager.ui.screens.SettingsScreen
 import io.github.poweran2020.rclone.manager.ui.theme.RcloneTheme
-import com.topjohnwu.superuser.Shell
+import io.github.poweran2020.rclone.manager.util.LocaleUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -75,37 +80,55 @@ class MainActivity : ComponentActivity() {
     private val tokenState = mutableStateOf("")
     private val rootStatusState = mutableStateOf(RootStatus.CHECKING)
     private val themeModeState = mutableStateOf(ThemeMode.SYSTEM)
+    private val appLanguageState = mutableStateOf(AppLanguage.SYSTEM)
+
+    override fun attachBaseContext(newBase: Context) {
+        val prefs = AppPreferences(newBase)
+        val lang = prefs.getAppLanguage()
+        super.attachBaseContext(LocaleUtil.getLocalizedContext(newBase, lang))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         appPreferences = AppPreferences(this)
         themeModeState.value = appPreferences.getThemeMode()
+        appLanguageState.value = appPreferences.getAppLanguage()
         tokenStore = TokenStore(this)
         tokenState.value = tokenStore.read()
 
         checkRootPermission(initial = true)
 
         setContent {
-            RcloneTheme(themeMode = themeModeState.value) {
-                RcloneApp(
-                    client = client,
-                    tokenStore = tokenStore,
-                    bearer = tokenState.value,
-                    rootStatus = rootStatusState.value,
-                    themeMode = themeModeState.value,
-                    onThemeModeChanged = { newMode ->
-                        themeModeState.value = newMode
-                        appPreferences.setThemeMode(newMode)
-                    },
-                    onRetryRoot = { checkRootPermission(forceRefresh = true) },
-                    onOpenRootManager = { openRootManager() },
-                    onExitApp = { finish() },
-                    onTokenChanged = { newToken ->
-                        tokenState.value = newToken
-                        tokenStore.write(newToken)
-                    }
-                )
+            val localizedContext = remember(appLanguageState.value) {
+                LocaleUtil.getLocalizedContext(this@MainActivity, appLanguageState.value)
+            }
+            CompositionLocalProvider(LocalContext provides localizedContext) {
+                RcloneTheme(themeMode = themeModeState.value) {
+                    RcloneApp(
+                        client = client,
+                        tokenStore = tokenStore,
+                        bearer = tokenState.value,
+                        rootStatus = rootStatusState.value,
+                        themeMode = themeModeState.value,
+                        onThemeModeChanged = { newMode ->
+                            themeModeState.value = newMode
+                            appPreferences.setThemeMode(newMode)
+                        },
+                        appLanguage = appLanguageState.value,
+                        onAppLanguageChanged = { newLang ->
+                            appLanguageState.value = newLang
+                            appPreferences.setAppLanguage(newLang)
+                        },
+                        onRetryRoot = { checkRootPermission(forceRefresh = true) },
+                        onOpenRootManager = { openRootManager() },
+                        onExitApp = { finish() },
+                        onTokenChanged = { newToken ->
+                            tokenState.value = newToken
+                            tokenStore.write(newToken)
+                        }
+                    )
+                }
             }
         }
     }
@@ -138,23 +161,23 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openRootManager() {
-        val managerPackages = listOf(
+        val rootPackages = listOf(
             "me.weishu.kernelsu",
             "com.topjohnwu.magisk",
             "org.apatch"
         )
-        for (pkg in managerPackages) {
-            val intent = packageManager.getLaunchIntentForPackage(pkg)
-                ?: android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-                    addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-                    setPackage(pkg)
-                }
-            val resolved = runCatching {
-                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
-                true
-            }.getOrDefault(false)
-            if (resolved) return
+        for (pkg in rootPackages) {
+            val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
+            if (launchIntent != null) {
+                runCatching { startActivity(launchIntent) }
+                return
+            }
+        }
+        runCatching {
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", packageName, null)
+            }
+            startActivity(intent)
         }
     }
 
@@ -173,6 +196,8 @@ private fun RcloneApp(
     rootStatus: RootStatus,
     themeMode: ThemeMode,
     onThemeModeChanged: (ThemeMode) -> Unit,
+    appLanguage: AppLanguage,
+    onAppLanguageChanged: (AppLanguage) -> Unit,
     onRetryRoot: () -> Unit,
     onOpenRootManager: () -> Unit,
     onExitApp: () -> Unit,
@@ -185,7 +210,13 @@ private fun RcloneApp(
     var activeRemoteForFiles by remember { mutableStateOf<String?>(null) }
     var showTokenEditor by remember { mutableStateOf(false) }
 
-    val navTabs = listOf("首页", "远端", "文件", "任务", "更多")
+    val navTabs = listOf(
+        stringResource(R.string.nav_dashboard),
+        stringResource(R.string.nav_remotes),
+        stringResource(R.string.nav_files),
+        stringResource(R.string.nav_jobs),
+        stringResource(R.string.nav_more)
+    )
     val navIcons = listOf(
         Icons.Default.Home,
         Icons.Default.Cloud,
@@ -193,7 +224,12 @@ private fun RcloneApp(
         Icons.Default.PlayArrow,
         Icons.Default.MoreHoriz
     )
-    val moreSubTabs = listOf("挂载管理", "加密档案", "安全配对", "系统运维")
+    val moreSubTabs = listOf(
+        stringResource(R.string.subtab_mounts),
+        stringResource(R.string.subtab_crypt),
+        stringResource(R.string.subtab_security),
+        stringResource(R.string.subtab_settings)
+    )
 
     val showMessage: (String) -> Unit = { msg ->
         scope.launch {
@@ -308,6 +344,8 @@ private fun RcloneApp(
                                 bearer = bearer,
                                 themeMode = themeMode,
                                 onThemeModeChanged = onThemeModeChanged,
+                                appLanguage = appLanguage,
+                                onAppLanguageChanged = onAppLanguageChanged,
                                 onEditToken = { showTokenEditor = true },
                                 onShowMessage = showMessage
                             )
@@ -317,10 +355,11 @@ private fun RcloneApp(
             }
         }
 
+        val context = LocalContext.current
         TokenEditorDialog(
             show = showTokenEditor,
             initialValue = bearer,
-            onSave = { onTokenChanged(it); showMessage("Token 已保存并加密到 Keystore") },
+            onSave = { onTokenChanged(it); showMessage(context.getString(R.string.status_success)) },
             onDismiss = { showTokenEditor = false }
         )
 
@@ -333,4 +372,3 @@ private fun RcloneApp(
         )
     }
 }
-

@@ -108,6 +108,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import io.github.poweran2020.rclone.manager.data.model.ProviderItem
 import io.github.poweran2020.rclone.manager.data.model.ProviderOption
 import io.github.poweran2020.rclone.manager.data.model.parseProviders
+import androidx.compose.ui.res.stringResource
+import io.github.poweran2020.rclone.manager.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,7 +165,7 @@ fun RemotesScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = "远端列表 (${remotes.size})")
+                SectionTitle(text = stringResource(R.string.remotes_count_header, remotes.size))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(
                         onClick = { loadRemotes() },
@@ -171,7 +173,7 @@ fun RemotesScreen(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(Modifier.width(2.dp))
-                        Text("刷新")
+                        Text(stringResource(R.string.action_refresh))
                     }
                     OutlinedButton(
                         onClick = { showImportDialog = true },
@@ -179,7 +181,7 @@ fun RemotesScreen(
                     ) {
                         Icon(Icons.Default.FileDownload, contentDescription = null)
                         Spacer(Modifier.width(2.dp))
-                        Text("导入")
+                        Text(stringResource(R.string.remotes_btn_import))
                     }
                     Button(
                         onClick = { showCreateDialog = true },
@@ -187,20 +189,20 @@ fun RemotesScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(Modifier.width(2.dp))
-                        Text("添加")
+                        Text(stringResource(R.string.remotes_btn_add))
                     }
                 }
             }
         }
 
         if (isLoading) {
-            item { LoadingView(message = "正在加载远端列表…") }
+            item { LoadingView(message = stringResource(R.string.remotes_loading)) }
         } else if (remotes.isEmpty()) {
             item {
                 EmptyView(
                     icon = Icons.Default.Cloud,
-                    title = "暂无配置的远端",
-                    message = "点击右上角“添加远端”，配置 WebDAV、S3 或其他云存储。"
+                    title = stringResource(R.string.remotes_empty_title),
+                    message = stringResource(R.string.remotes_empty_desc)
                 )
             }
         } else {
@@ -215,7 +217,7 @@ fun RemotesScreen(
                             Text(remote.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             val endpointText = remote.endpoint.takeIf { it.isNotBlank() && it != "null" }
                             Text(
-                                text = "类型: ${remote.type}" + if (endpointText != null) " · $endpointText" else "",
+                                text = stringResource(R.string.remote_type_prefix, remote.type) + if (endpointText != null) " · $endpointText" else "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -248,13 +250,13 @@ fun RemotesScreen(
                                 }
                             }
                         ) {
-                            Text("测试")
+                            Text(stringResource(R.string.remotes_btn_test_short))
                         }
 
                         OutlinedButton(onClick = { onNavigateToFileBrowser(remote.id) }) {
                             Icon(Icons.Default.Folder, contentDescription = null)
                             Spacer(Modifier.width(2.dp))
-                            Text("浏览")
+                            Text(stringResource(R.string.remotes_btn_browse_short))
                         }
 
                         OutlinedButton(
@@ -271,11 +273,11 @@ fun RemotesScreen(
                                 }
                             }
                         ) {
-                            Text(if (remote.enabled) "禁用" else "启用")
+                            Text(stringResource(if (remote.enabled) R.string.remotes_btn_disable else R.string.remotes_btn_enable))
                         }
 
                         IconButton(onClick = { editingRemote = remote }) {
-                            Icon(Icons.Default.Edit, contentDescription = "编辑")
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.action_edit))
                         }
 
                         IconButton(
@@ -330,7 +332,7 @@ fun RemotesScreen(
 
     if (showCreateDialog) {
         RemoteFormDialog(
-            title = "添加远端",
+            title = stringResource(R.string.remotes_dialog_add_title),
             initialName = "",
             initialType = "webdav",
             initialEndpoint = "",
@@ -354,7 +356,7 @@ fun RemotesScreen(
 
     editingRemote?.let { remote ->
         RemoteFormDialog(
-            title = "编辑远端: ${remote.name}",
+            title = "${stringResource(R.string.remotes_dialog_edit_title)}: ${remote.name}",
             initialName = remote.name,
             initialType = remote.type,
             initialEndpoint = remote.endpoint,
@@ -401,10 +403,10 @@ fun RemotesScreen(
     deleteCandidate?.let { (remote, token) ->
         DangerousConfirmDialog(
             show = true,
-            title = "确认删除远端: ${remote.name}",
-            message = "此操作将从数据库和运行时移除该远端配置。若有挂载关联请先停止挂载。",
+            title = "${stringResource(R.string.remote_delete_title)}: ${remote.name}",
+            message = stringResource(R.string.remote_delete_confirm_msg),
             tokenBadge = token,
-            confirmLabel = "确认删除",
+            confirmLabel = stringResource(R.string.action_confirm),
             isLoading = isDeletingRemote,
             onConfirm = {
                 scope.launch {

@@ -89,6 +89,8 @@ import io.github.poweran2020.rclone.manager.ui.component.LoadingView
 import io.github.poweran2020.rclone.manager.ui.component.MaterialTextField
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
+import androidx.compose.ui.res.stringResource
+import io.github.poweran2020.rclone.manager.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -191,7 +193,7 @@ fun SecurityScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            SectionTitle(text = "客户端安全配对 (Pairing)")
+            SectionTitle(text = stringResource(R.string.security_pairing_section))
         }
 
         val isPaired = bearer.isNotBlank()
@@ -208,14 +210,14 @@ fun SecurityScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(8.dp))
-                            Text("本机客户端已受控配对", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.security_paired_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         }
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                "正常在线",
+                                stringResource(R.string.security_paired_online),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -258,10 +260,10 @@ fun SecurityScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.width(8.dp))
-                        Text("本机尚未建立安全配对", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.security_unpaired_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        "当前应用尚未持有与 Gateway 守护进程通信的 Bearer 令牌。请点击下方一键配对建立连接。",
+                        stringResource(R.string.security_unpaired_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -272,7 +274,7 @@ fun SecurityScreen(
                     ) {
                         Icon(Icons.Default.Bolt, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
-                        Text("⚡ 本机一键自动配对 (推荐)")
+                        Text(stringResource(R.string.security_btn_auto_pair_rec))
                     }
                 }
             }
@@ -283,7 +285,7 @@ fun SecurityScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Devices, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                     Spacer(Modifier.width(8.dp))
-                    Text("外部终端安全接入 (Web / CLI / 局域网)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.security_external_clients), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 }
                 Text(
                     "• 供局域网电脑、Web 控制台或第三方命令行客户端配对授权接入。\n" +
@@ -316,7 +318,7 @@ fun SecurityScreen(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("获取新配对码")
+                        Text(stringResource(R.string.security_get_pairing_code))
                     }
                     OutlinedButton(
                         onClick = { showPairingCompleteDialog = true },
@@ -577,25 +579,25 @@ fun SecurityScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = "已配对控制端 (${clientsList.size})")
+                SectionTitle(text = stringResource(R.string.security_clients_section, clientsList.size))
                 OutlinedButton(
                     onClick = { loadClients() },
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
-                    Text("刷新")
+                    Text(stringResource(R.string.action_refresh))
                 }
             }
         }
 
         if (isLoading) {
-            item { LoadingView(message = "正在加载客户端列表…") }
+            item { LoadingView(message = stringResource(R.string.status_loading)) }
         } else if (clientsList.isEmpty()) {
             item {
                 EmptyView(
                     icon = Icons.Default.Security,
-                    title = "暂无已配对客户端",
+                    title = stringResource(R.string.security_clients_empty),
                     message = "本地默认 root 进程直接通过 Unix socket 连接。"
                 )
             }
