@@ -165,31 +165,38 @@ fun RemotesScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = stringResource(R.string.remotes_count_header, remotes.size))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionTitle(
+                    text = stringResource(R.string.remotes_count_header, remotes.size),
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         onClick = { loadRemotes() },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(2.dp))
-                        Text(stringResource(R.string.action_refresh))
+                        Text(stringResource(R.string.action_refresh), maxLines = 1, softWrap = false)
                     }
                     OutlinedButton(
                         onClick = { showImportDialog = true },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.FileDownload, contentDescription = null)
+                        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(2.dp))
-                        Text(stringResource(R.string.remotes_btn_import))
+                        Text(stringResource(R.string.remotes_btn_import), maxLines = 1, softWrap = false)
                     }
                     Button(
                         onClick = { showCreateDialog = true },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(2.dp))
-                        Text(stringResource(R.string.remotes_btn_add))
+                        Text(stringResource(R.string.remotes_btn_add), maxLines = 1, softWrap = false)
                     }
                 }
             }

@@ -151,26 +151,32 @@ fun JobsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = stringResource(R.string.jobs_center_title, jobs.size))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionTitle(
+                    text = stringResource(R.string.jobs_center_title, jobs.size),
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         onClick = { loadJobs() },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.action_refresh))
+                        Text(stringResource(R.string.action_refresh), maxLines = 1, softWrap = false)
                     }
                     Button(
                         onClick = {
                             loadRemotes()
                             showCreateDialog = true
                         },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.jobs_btn_create))
+                        Text(stringResource(R.string.jobs_btn_create), maxLines = 1, softWrap = false)
                     }
                 }
             }

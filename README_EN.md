@@ -57,17 +57,17 @@ The project employs an **All-in-One Pure Service Module (No System Mount)** arch
 
 ## 📱 2. Screenshots Gallery
 
-| Remote Storage Management | Cloud File Explorer | Job Orchestration & Queues |
+| Dashboard Overview | Remote Storage Management | Cloud File Explorer |
 |:---:|:---:|:---:|
-| ![Remotes](docs/screenshots/remotes.png) | ![Files](docs/screenshots/files.png) | ![Jobs](docs/screenshots/jobs.png) |
+| <img src="docs/screenshots/dashboard.png" width="280" alt="Dashboard" /> | <img src="docs/screenshots/remotes.png" width="280" alt="Remotes" /> | <img src="docs/screenshots/files.png" width="280" alt="Files" /> |
 
-| Add Remote Dialog | Legacy Config Migration | Settings & Diagnostics |
+| Mount Profile Orchestration | Job Orchestration & Queues | Add Remote Dialog |
 |:---:|:---:|:---:|
-| ![Add Remote](docs/screenshots/add_remote.png) | ![Migration](docs/screenshots/migration.png) | ![Settings](docs/screenshots/settings.png) |
+| <img src="docs/screenshots/mounts.png" width="280" alt="Mounts" /> | <img src="docs/screenshots/jobs.png" width="280" alt="Jobs" /> | <img src="docs/screenshots/add_remote.png" width="280" alt="Add Remote" /> |
 
-| Material 3 Dark Theme |
-|:---:|
-| ![Dark Theme](docs/screenshots/dark_mode.png) |
+| Legacy Config Migration | Settings & Diagnostics | Material 3 Dark Theme |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/migration.png" width="280" alt="Migration" /> | <img src="docs/screenshots/settings.png" width="280" alt="Settings" /> | <img src="docs/screenshots/dark_mode.png" width="280" alt="Dark Theme" /> |
 
 ---
 

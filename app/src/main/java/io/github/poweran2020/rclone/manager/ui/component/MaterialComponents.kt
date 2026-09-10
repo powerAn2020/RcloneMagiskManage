@@ -38,15 +38,22 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+fun SectionTitle(
+    text: String,
+    modifier: Modifier = Modifier,
+    maxLines: Int = 1
+) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
         modifier = modifier.padding(vertical = 4.dp)
     )
 }

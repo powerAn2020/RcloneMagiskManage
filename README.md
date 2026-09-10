@@ -57,17 +57,17 @@
 
 ## 📱 2. 软件界面截图
 
-| 远端存储管理 (Remotes) | 云存储文件浏览 (Files) | 任务编排与调度 (Jobs) |
+| 仪表盘总览 (Dashboard) | 远端存储管理 (Remotes) | 云存储文件浏览 (Files) |
 |:---:|:---:|:---:|
-| ![远端管理](docs/screenshots/remotes.png) | ![文件浏览](docs/screenshots/files.png) | ![任务调度](docs/screenshots/jobs.png) |
+| <img src="docs/screenshots/dashboard.png" width="280" alt="仪表盘总览" /> | <img src="docs/screenshots/remotes.png" width="280" alt="远端存储管理" /> | <img src="docs/screenshots/files.png" width="280" alt="云存储文件浏览" /> |
 
-| 新建远端配置 (Add Remote) | 旧版配置一键迁移 (Migration) | 系统状态与设置 (Settings) |
+| 挂载配置管理 (Mounts) | 任务编排与调度 (Jobs) | 新建远端配置 (Add Remote) |
 |:---:|:---:|:---:|
-| ![新建远端](docs/screenshots/add_remote.png) | ![配置迁移](docs/screenshots/migration.png) | ![系统设置](docs/screenshots/settings.png) |
+| <img src="docs/screenshots/mounts.png" width="280" alt="挂载配置管理" /> | <img src="docs/screenshots/jobs.png" width="280" alt="任务编排与调度" /> | <img src="docs/screenshots/add_remote.png" width="280" alt="新建远端配置" /> |
 
-| 深色模式适配 (Dark Theme) |
-|:---:|
-| ![深色主题](docs/screenshots/dark_mode.png) |
+| 旧版配置迁移 (Migration) | 系统状态与设置 (Settings) | 深色模式适配 (Dark Theme) |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/migration.png" width="280" alt="旧版配置迁移" /> | <img src="docs/screenshots/settings.png" width="280" alt="系统状态与设置" /> | <img src="docs/screenshots/dark_mode.png" width="280" alt="深色模式适配" /> |
 
 ---
 

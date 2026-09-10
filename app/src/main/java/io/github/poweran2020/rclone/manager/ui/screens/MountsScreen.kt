@@ -139,23 +139,29 @@ fun MountsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = "${stringResource(R.string.mounts_title)} (${mounts.size})")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionTitle(
+                    text = "${stringResource(R.string.mounts_title)} (${mounts.size})",
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         onClick = { loadMounts() },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.action_refresh))
+                        Text(stringResource(R.string.action_refresh), maxLines = 1, softWrap = false)
                     }
                     Button(
                         onClick = { showCreateDialog = true },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.mounts_btn_create))
+                        Text(stringResource(R.string.mounts_btn_create), maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -252,6 +258,8 @@ fun MountsScreen(
                         if (!isRunning) {
                             Button(
                                 modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                 onClick = {
                                     scope.launch {
                                         client.mountAction(mount.id, "start", bearer).fold(
@@ -263,11 +271,13 @@ fun MountsScreen(
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.mount_btn_start))
+                                Text(stringResource(R.string.mount_btn_start), maxLines = 1, softWrap = false)
                             }
                         } else {
                             OutlinedButton(
                                 modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                 onClick = {
                                     scope.launch {
                                         client.mountAction(mount.id, "stop", bearer).fold(
@@ -279,11 +289,13 @@ fun MountsScreen(
                             ) {
                                 Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.mount_btn_stop))
+                                Text(stringResource(R.string.mount_btn_stop), maxLines = 1, softWrap = false)
                             }
                         }
 
                         OutlinedButton(
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                             onClick = {
                                 if (isRunning || mount.status.uppercase() == "STARTING") {
                                     onShowMessage("挂载正在运行中，请先停止挂载后再进行编辑修改")
@@ -294,7 +306,7 @@ fun MountsScreen(
                         ) {
                             Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.action_edit))
+                            Text(stringResource(R.string.action_edit), maxLines = 1, softWrap = false)
                         }
 
                         IconButton(

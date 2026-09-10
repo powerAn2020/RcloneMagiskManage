@@ -579,14 +579,19 @@ fun SecurityScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = stringResource(R.string.security_clients_section, clientsList.size))
+                SectionTitle(
+                    text = stringResource(R.string.security_clients_section, clientsList.size),
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
                 OutlinedButton(
                     onClick = { loadClients() },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null)
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.action_refresh))
+                    Text(stringResource(R.string.action_refresh), maxLines = 1, softWrap = false)
                 }
             }
         }

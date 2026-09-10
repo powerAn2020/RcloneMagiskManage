@@ -132,14 +132,23 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionTitle(text = stringResource(R.string.dashboard_service_status_title))
+                SectionTitle(
+                    text = stringResource(R.string.dashboard_service_status_title),
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
                 OutlinedButton(
                     onClick = { refreshDashboard() },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null)
-                    Spacer(Modifier.padding(2.dp))
-                    Text(if (isRefreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh))
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (isRefreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh),
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
         }
@@ -151,7 +160,7 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("Root Gateway", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text("Unix Socket: /data/adb/rclone-manage", style = MaterialTheme.typography.bodySmall)
                     }
@@ -179,11 +188,13 @@ fun DashboardScreen(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = !isRefreshing
+                        enabled = !isRefreshing,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.action_start))
+                        Text(stringResource(R.string.action_start), maxLines = 1, softWrap = false)
                     }
 
                     OutlinedButton(
@@ -203,11 +214,13 @@ fun DashboardScreen(
                         },
                         modifier = Modifier.weight(1f),
                         enabled = !isRefreshing && !isOffline,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
                         Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.action_stop))
+                        Text(stringResource(R.string.action_stop), maxLines = 1, softWrap = false)
                     }
 
                     Button(
@@ -226,11 +239,13 @@ fun DashboardScreen(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = !isRefreshing
+                        enabled = !isRefreshing,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.action_restart))
+                        Text(stringResource(R.string.action_restart), maxLines = 1, softWrap = false)
                     }
                 }
                 if (!healthError.isNullOrBlank()) {
