@@ -61,12 +61,21 @@ function Build-ForArch($RustTarget, $Abi, $ZipName) {
 
     # 2. Copy prebuilt rclone & fusermount3
     $PrebuiltDir = "$Root/magisk-module/prebuilt/$Abi"
-    if (Test-Path $PrebuiltDir) {
+    $SubmoduleBinDir = "$Root/external/rclone-fuse3-magisk/magisk-rclone_$Abi/system/vendor/bin"
+    if ((Test-Path "$PrebuiltDir/rclone") -and (Test-Path "$PrebuiltDir/fusermount3")) {
         Write-Host "[*] Integrating prebuilt binaries from $PrebuiltDir..." -ForegroundColor Cyan
         Copy-Item "$PrebuiltDir/rclone" "$OutDir/bin/rclone"
         Copy-Item "$PrebuiltDir/fusermount3" "$OutDir/bin/fusermount3"
+    } elseif ((Test-Path "$SubmoduleBinDir/rclone") -and (Test-Path "$SubmoduleBinDir/fusermount3")) {
+        Write-Host "[*] Integrating binaries from submodule build $SubmoduleBinDir..." -ForegroundColor Cyan
+        Copy-Item "$SubmoduleBinDir/rclone" "$OutDir/bin/rclone"
+        Copy-Item "$SubmoduleBinDir/fusermount3" "$OutDir/bin/fusermount3"
+    } elseif ((Test-Path "$Root/scratch/unpacked_magisk_rclone/system/vendor/bin/rclone") -and ($Abi -eq "x86_64")) {
+        Write-Host "[*] Integrating binaries from scratch cache..." -ForegroundColor Cyan
+        Copy-Item "$Root/scratch/unpacked_magisk_rclone/system/vendor/bin/rclone" "$OutDir/bin/rclone"
+        Copy-Item "$Root/scratch/unpacked_magisk_rclone/system/vendor/bin/fusermount3" "$OutDir/bin/fusermount3"
     } else {
-        Write-Error "Prebuilt binaries not found for $Abi in $PrebuiltDir"
+        Write-Warning "Prebuilt binaries not found for $Abi in $PrebuiltDir or $SubmoduleBinDir"
     }
 
     # 3. Copy module scripts

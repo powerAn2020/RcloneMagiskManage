@@ -1,0 +1,345 @@
+Rclone Root Manager
+最终汇总需求与实施技术规格书
+基于 NewFuture/rclone-fuse3-magisk 的产品化改造方案
+V1.1.0 · Implementation Baseline
+基线仓库：github.com/NewFuture/rclone-fuse3-magisk
+仓库核验日期：2026-09-02
+
+
+文档说明
+本文将需求、架构、API、数据库、安全、任务、挂载、加密、Magisk 改造和测试验收合并为一份可以直接进入开发阶段的基线规格书。
+仓库事实基线：上游当前 README 描述了 FUSE3、开机自动挂载、Web GUI 和 sync 服务；配置默认位于 /data/adb/modules/rclone/conf。service.sh 当前会枚举 listremotes 后自动挂载，并启动 sync.service.sh；sync.service.sh 当前按文本行解析 sync/copy 配置并循环执行；env 当前默认 RC 地址为 :5572，没有 htpasswd 时打开 RCLONE_RC_NO_AUTH。相关原始内容以仓库当前 main 分支为准。
+引用：仓库 README https://github.com/NewFuture/rclone-fuse3-magisk ，service.sh https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/service.sh ，sync.service.sh https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/sync.service.sh ，env https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/env 。
+1. 产品定义与边界
+产品名称：Rclone Root Manager。定位为 Android 上的 Root 云存储控制平台。Magisk 负责模块部署与系统启动生命周期；Root Gateway 是安全边界；rclone 是数据平面；Android App 是控制面。
+层	职责	不负责什么
+Magisk Module	安装、文件布局、开机启动、版本升级、宿主兼容	不负责业务 API、业务 ACL
+Root Gateway	认证、授权、参数校验、任务/挂载编排、审计、密钥访问	不重新实现 S3/WebDAV 等协议
+rclone	copy/sync/move/bisync/mount/VFS/crypt/Remote backend	不承担 App 业务权限
+Android App	UI、配置、任务创建、状态和日志展示	不执行核心传输、不保存明文云凭据
+2. 核心设计决策
+1.App 只负责控制和展示；所有持续性任务由 Gateway/rclone 执行。App 被杀不应终止后台任务。
+2.Magisk 作为产品核心宿主保留，但不把 Magisk 等同于安全模型；Root 权限与业务授权严格分开。
+3.禁止向 App 直接暴露原始 rclone RC。rclone 官方说明 RC API 的访问权限等价于运行 rclone 用户的 shell 权限，且当前无 per-endpoint capability/scope。
+4.所有 App 请求经过 typed API、Scope、Remote ACL、Path ACL、危险操作确认和参数白名单。
+5.挂载是独立子系统，不与普通 copy/sync 混为一谈；Android FUSE、mount namespace、SELinux、bind mount 路径必须专项验证。
+6.配置安全区分 rclone config encryption、crypt、Secret Store、Android Keystore、传输层 TLS。它们解决不同问题。
+3. 总体架构
+Android App
+    │
+    │ Unix Domain Socket / optional LAN TLS
+    ▼
+┌────────────────────────────┐
+│ Root Gateway               │
+│ Auth / Scope / ACL         │
+│ Path Guard / Job Manager   │
+│ Mount Manager / Secret     │
+│ Audit / Rclone Adapter     │
+└─────────────┬──────────────┘
+              │ internal RC / process control
+              ▼
+        rclone Core
+      /       |          local     FUSE      cloud backends
+
+正式产品中建议让 rclone RC 仅作为 Gateway 内部控制协议。rclone 官方 RC 文档也说明可以通过 HTTP 直接访问 RC、支持异步 job、任务状态、mount、operations、sync 等多类接口，但这些原生接口不应直接成为产品权限边界。
+参考：https://rclone.org/rc/ 。
+4. 上游仓库现状与改造点
+组件	当前行为	问题	V1.1 改造
+service.sh	开机枚举 listremotes，逐个调用 rclone-mount；随后启动 sync.service.sh	Remote 配置和开机挂载绑定；服务启动无法按任务/配置细分	显式 Mount Profile + Job Scheduler
+sync.service.sh	逐行读取 sync/copy 文件，使用 args=( $line ) 后调用 rclone sync/copy，每 180 秒循环	自由参数、shell 分词、状态不持久、缺少 Job ID	SQLite Typed Job + parser compatibility
+env	RCLONE_RC_ADDR=:5572；无 htpasswd 则 RCLONE_RC_NO_AUTH=true	Root RC 暴露风险；App 不应接触 Raw RC	Unix socket/loopback，Gateway 统一认证
+rclone-mount	/mnt/rclone-$NAME + /data/media/0 + runtime bind	mount 点依赖 remote 名；异常回收困难	Mount Profile + instance PID + state machine
+rclone-kill-all	卸载所有 fuse.rclone，然后 pkill -f rclone	可能影响其他 rclone 实例/任务	按实例 stop；保留 emergency kill
+引用：https://github.com/NewFuture/rclone-fuse3-magisk/blob/main/magisk-rclone/system/vendor/bin/rclone-mount 与 https://github.com/NewFuture/rclone-fuse3-magisk/blob/main/magisk-rclone/system/vendor/bin/rclone-kill-all 。
+5. Android App 需求
+页面	功能	V1.1 级别
+Dashboard	Core/Root/任务/挂载/吞吐/错误概览	P0
+Remotes	新增、编辑、删除、测试连接、启停、导入导出	P0
+Files	列表、详情、上传、下载、复制、移动、删除、mkdir	P0
+Jobs	创建、启动、暂停、恢复、取消、重试、日志	P0
+Schedules	Cron/周期/Wi-Fi/充电/电量条件	P1
+Mounts	创建 profile、启动、停止、缓存状态	P1
+Crypt	crypt profile、密码状态、加密测试	P1
+Security	客户端、Scope、LAN/TLS、审计、密钥轮换	P0/P1
+Settings	Core 版本、缓存、日志、升级、迁移	P0
+6. Gateway 设计
+Gateway 是唯一允许 Android App 触发 Root 操作的入口。Gateway 不允许 arbitrary exec、arbitrary shell、arbitrary rclone flags、Raw RC proxy。
+6.1 进程模型
+Magisk service.sh
+    └── root-gateway
+          ├── API server / Unix socket
+          ├── Job Scheduler
+          ├── Mount Manager
+          ├── Secret Manager
+          └── Rclone Adapter
+                 └── rclone worker processes
+
+6.2 原则
+Gateway 尽可能小：Root 代码只保留必须的系统操作。
+rclone worker 以最小必要环境运行；若某类 mount 必须 Root，则仅该 worker 保持高权限。
+每个 Job/Mount 有独立 PID、状态、日志和 stop handle，禁止使用全局 pkill 作为正常流程。
+7. IPC 与认证
+默认通信路径为 Unix Domain Socket，例如 /run/rclone-manager/gateway.sock。Gateway 在创建 socket 前确保目录和 socket 权限；仅允许受信 Android App UID 访问。若 ROM/部署方式不足以保证单独 UID 约束，则额外采用客户端密钥/签名认证。
+7.1 本地认证
+Authorization: Bearer <opaque token>
+X-Client-Id: <client-id>
+X-Timestamp: <unix-ms>
+X-Nonce: <random>
+X-Signature: HMAC-SHA256(...)
+
+token 在数据库中只保存 hash；签名密钥不以明文落盘。Nonce 有短时去重窗口。时间偏差默认控制在 ±60 秒。
+7.2 LAN 模式
+默认关闭。
+开启后必须 TLS；优先 mTLS 或至少 token + request signing。
+默认只绑定明确选择的 LAN 地址，不监听 0.0.0.0。
+支持 pairing code，pairing 会生成独立 Client ID、密钥和 Scope。
+8. 权限与 ACL
+Root 是 OS 能力；Scope 是产品授权；Remote ACL 是资源授权；Path ACL 是路径授权。四层必须全部通过。
+Scope	含义	风险等级
+system.read	系统状态/版本/健康	低
+remote.read	查看 Remote 元数据	低
+remote.write	新增/修改 Remote	高
+remote.delete	删除 Remote	高
+file.read	读取列表/元数据	中
+file.write	上传/创建/覆盖	中
+file.delete	删除文件	高
+job.execute	执行任务	高
+job.control	暂停/取消/重试	中高
+mount.write	创建/停止挂载	高
+security.write	客户端/安全配置	极高
+admin.*	全部能力	极高
+Remote ACL 示例：client-A 对 remote photo 允许 file.read/file.write，allowed_prefix=/photos；client-B 只能 file.read。Gateway 在解析任何路径前先做 canonical path 处理，再应用 ACL。
+9. 文件安全与路径沙箱
+本地路径必须 canonicalize，拒绝 .. 穿越。
+对 symlink、bind mount、mount namespace 做最终路径检查；不能只检查字符串前缀。
+Remote 路径必须限制在 Remote ACL 的 allowed_prefix。
+危险路径 /system、/vendor、/product、/proc、/sys、/dev、/data/adb 等默认拒绝。
+当业务需要访问受保护目录时，通过独立 capability + 明确 UI 授权，不修改全局默认白名单。
+10. API V1 规格
+完整机器可读 OpenAPI 文件已随本交付物提供：openapi-v1.yaml。下列为规范边界。
+资源	主要 Endpoint	说明
+System	GET /api/v1/system/info、/health	状态和版本
+Remote	GET/POST /api/v1/remotes、/{id}、/{id}/test	Remote CRUD/测试
+Files	GET /api/v1/files、POST /mkdir、/copy、/move、/delete	文件操作
+Jobs	GET/POST /api/v1/jobs、/{id}/*	任务生命周期
+Mounts	GET/POST /api/v1/mounts、/{id}/start|stop	挂载管理
+Security	/clients、/pairing/*	客户端注册与配对
+Logs	/audit	审计查询
+错误返回统一结构：
+{
+  "code": "PATH_DENIED",
+  "message": "path is outside allowed prefix",
+  "requestId": "req-...",
+  "details": {}
+}
+
+错误码	语义
+AUTH_REQUIRED	缺少认证
+AUTH_INVALID	认证失败
+SCOPE_DENIED	没有 Scope
+REMOTE_DENIED	Remote ACL 拒绝
+PATH_DENIED	路径 ACL 拒绝
+CONFIRMATION_REQUIRED	需要危险操作确认
+INVALID_ARGUMENT	参数不合法
+JOB_NOT_FOUND	任务不存在
+MOUNT_CONFLICT	挂载点冲突
+CORE_UNAVAILABLE	rclone/Core 不可用
+RATE_LIMITED	超过速率限制
+MIGRATION_REQUIRED	配置迁移未完成
+11. Job 与任务状态机
+CREATED -> QUEUED -> RUNNING -> SUCCESS
+                         ├-> FAILED
+                         ├-> CANCEL_REQUESTED -> CANCELLED
+                         └-> PAUSE_REQUESTED -> PAUSED -> RUNNING
+
+每次实际执行产生 job_run，保存 rclone job ID、PID、统计、错误。Job 本身只保存配置和聚合状态。
+支持 copy、sync、move、bisync、delete。原上游 sync/copy 配置作为迁移输入，不再作为 V1.1 的主存储格式。
+12. Typed Job 参数白名单
+参数	范围/约束	默认
+transfers	1 to 32	4
+checkers	1 to 64	8
+bwLimit	业务字符串，限制长度	未设置
+overwrite	boolean，某些动作禁止	false
+dryRun	boolean	false
+deleteExcluded	仅 sync 类允许	false
+App 不直接提交 --xxx 参数数组。Gateway 将字段映射到受支持的 rclone flags。未来新增参数必须经过 allowlist、兼容性测试和安全评审。
+13. Schedule 调度
+调度对象只负责何时运行，执行对象仍然是 Job。调度器记录 nextRunAt，系统启动后重新计算，不依赖内存状态。
+条件	处理
+Wi-Fi	Android 网络能力满足 Wi-Fi 条件才启动
+Unmetered	检测到非计费网络才启动
+Charging	充电状态才启动
+Battery >= 30%	低于阈值推迟
+Boot	系统完成启动后按 enabled profile 恢复
+Network Restored	指数退避后重新调度
+14. Mount Manager
+Mount Profile 与 Remote 解耦。Remote 定义“去哪里”，Mount Profile 定义“以什么方式挂载”。一个 Remote 可以对应多个 profile，但默认只允许一个相同 mount point。
+MountProfile
+  id
+  name
+  remoteId
+  remotePath
+  mountPoint
+  readOnly
+  cacheMode
+  cacheDir
+  cacheMaxSize
+  cacheMaxAge
+  enabled
+  status
+  pid
+
+底层继续复用仓库现有 rclone-mount 的 FUSE3 与 Android bind mount 机制，但由 Gateway 记录实例状态并管理生命周期。上游脚本当前把 remote 挂在 /mnt/rclone-$NAME，并 bind 到 /data/media/0/$NAME、/mnt/pass_through/0/emulated/0/$NAME、/mnt/runtime/default/emulated/0/$NAME。
+参考：https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/system/vendor/bin/rclone-mount 。
+15. VFS Cache
+上游 env 当前默认 RCLONE_VFS_CACHE_MODE=full、MAX_AGE=36h、MAX_SIZE=32G，并配置了多项 read ahead/buffer 参数。正式产品继续允许这些参数，但必须进入 Mount Profile 并可按设备能力做上限控制。
+参考：https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/env 。
+16. 加密体系
+机制	解决的问题	是否与其他层互斥
+rclone crypt	远端对象内容/名称的客户端侧加密	否
+rclone config encryption	保护 rclone.conf 中的敏感配置	否
+Secret Store	统一保存 Access Key/Token/crypt secret 的引用	否
+Android Keystore	保护 App/Gateway 使用的本地主密钥材料	否
+TLS	保护 LAN/API 传输	否
+不要把“App 自己 AES 加密整个 rclone.conf”作为 rclone 直接读取格式。更稳妥的是使用 rclone 原生 config encryption，或由 Gateway 对 secret 做解包后以受控方式提供给 rclone。rclone crypt 文档：https://rclone.org/crypt/；rclone config / documentation：https://rclone.org/docs/ 。
+17. Secret Store
+Remote 元数据只保存 secretRef，不保存明文 credential。Secret Store 建议采用加密 blob + 版本号 + rotation metadata。App API 永远不回显 secret。日志、崩溃报告、审计也禁止写入 Secret。
+remote.secret_ref -> secret_meta.id
+secret_meta -> encrypted secret blob
+                    ↑
+              master key / keystore-wrapped key
+
+Root 环境下必须承认一个现实：一旦攻击者拥有完全 Root 并能控制可信进程，运行时明文 secret 不能被软件层绝对隐藏。目标应是阻止未授权 App、网络攻击、配置直接泄露和误操作。
+18. rclone RC 安全
+rclone 当前文档明确写出：RC API 的访问权限等价于运行 rclone 用户的 shell 权限；调用者可执行 OS 命令、读写其可达文件、读取存储凭据、修改 runtime options、退出进程。并且 RC 当前没有 per-endpoint capability/scope。
+因此：
+生产模式禁止 --rc-no-auth。
+生产模式 RC 只监听 Gateway 内部 loopback/Unix socket。
+Gateway 不代理 config/dump、core/command、options/set、pluginsctl/* 等高风险原生接口。
+需要的能力通过固定的业务接口映射到固定 rclone RC endpoint。
+参考：https://rclone.org/rc/ 。
+19. 删除与危险操作保护
+delete、purge、sync with delete、Remote 删除、crypt key change、Core stop 属于危险操作。对大量删除必须先 dry-run，再由用户确认。
+Dry-run result
+  added: 120
+  updated: 811
+  deleted: 13242
+  bytes: 280 GB
+
+Confirmation token -> expires in 60s -> execute
+
+当删除数量超过 1000 个对象或业务定义的字节阈值时强制确认；该阈值应可配置但默认不可关闭。
+20. 审计
+所有高风险 API 和所有 Root 操作写 audit_log。记录 client、uid、operation、resource、remote、path hash、result、latency、error code。路径默认只存 hash/摘要，避免审计日志本身泄露文件名。
+21. 日志与可观测性
+日志	内容	保存周期建议
+gateway.log	Gateway 生命周期、异常	7-14 天
+job log	单次任务输出	按 Job 保留，默认 14 天
+audit log	安全审计	30-90 天
+rclone log	核心错误/诊断	按大小轮转
+日志必须做 size rotation，默认总量上限；超限优先删除低价值运行日志，不删除审计和正在运行 Job 的日志。
+22. 数据库设计
+SQLite 用于 Gateway 的持久状态。完整 DDL 已随本交付物提供：schema-v1.sql。
+表	作用
+remote	Remote 元数据
+remote_acl	客户端与 Remote 权限/前缀
+client	受信控制端
+permission_grant	Scope 授权
+job	任务定义
+job_run	任务执行实例
+mount_profile	挂载定义
+secret_meta	密钥元数据
+audit_log	审计
+migration_history	升级迁移
+23. 配置文件迁移
+V1.1 不删除上游现有配置。第一次启动执行只读发现，然后生成迁移计划。迁移成功后保留备份。
+7.读取 /data/adb/modules/rclone/conf/rclone.conf 与现有 env。
+8.读取 sync/copy 旧文件并使用兼容解析器生成 Job 草稿；解析失败的行进入 migration_errors，不执行。
+9.Remote 默认不自动生成 enabled Mount Profile；是否挂载由用户明确决定。
+10.写 migration_history，避免重复迁移。
+24. Magisk 生命周期
+Magisk boot
+  -> service.sh
+     -> load product env
+     -> prepare runtime dir / socket dir
+     -> start gateway
+     -> health check
+     -> recover enabled jobs/mounts
+
+service.sh 不再负责遍历所有 Remote 做无条件 mount。它的职责缩小为启动 Gateway 和必要的系统准备。Gateway 决定哪些 Mount Profile/Job 在开机恢复。
+25. stop / restart / recovery
+动作	行为
+Stop Core	阻止新任务，等待/取消可取消任务，停止 mounts，关闭 rclone worker，再退出 Gateway
+Restart Core	保存状态 -> stop -> start -> health -> recover
+Crash	Magisk watchdog/service 恢复 Gateway；短时间连续 crash 超过阈值进入 SAFE_MODE
+Safe Mode	不启动 scheduled jobs/mounts，只允许诊断、日志、恢复配置、卸载/回滚
+Emergency Kill	仅维护命令；可以 global kill，但明确提示会影响所有 rclone 实例
+26. 升级与回滚
+App、Gateway、rclone binary、Magisk Module、DB schema 分别有版本号。升级前备份 DB/配置；升级后执行迁移与健康检查。若 health check 不通过，回滚 core 或进入 Safe Mode。
+27. 性能基线
+指标	V1.1 目标
+空闲 Gateway RSS	设备允许范围内；目标 < 50 MB（不含 rclone）
+API P95	本地简单查询 < 100 ms（不含云端 IO）
+任务启动延迟	正常 < 2 s；受网络/设备启动影响时记录实际值
+并发任务	默认 2；可配 1..4，避免移动设备资源过载
+默认 transfers	4
+默认 checkers	8
+性能数字是产品初始验收目标，不代表所有 Android 设备都能达到；需要在目标 ROM/CPU/内存档位做实测并形成设备矩阵。
+28. 测试策略
+类别	覆盖
+Unit	Path Guard、Scope、参数 schema、config parser、state machine
+Integration	Gateway -> rclone RC -> mock/local remote
+Device	Magisk boot、SELinux、FUSE3、bind mount、Doze、重启
+Security	未认证、越权 Scope、路径穿越、LAN 扫描、replay、token rotation
+Migration	旧 rclone.conf/env/sync/copy 多种组合
+Soak	7*24 小时定时同步、mount、网络断开恢复
+Recovery	Gateway crash、rclone crash、设备重启、磁盘不足
+29. 安全验收清单
+App 无法访问 raw rclone RC。
+没有 exec/shell/arbitrary-args API。
+默认 RC 不开放到 LAN；无认证不得绑定非 loopback。
+Token 不以明文保存；Secret 不出现在 API response/log。
+没有 Scope 无法执行对应操作。
+没有 Remote ACL 无法访问对应 Remote。
+路径穿越、symlink escape、mount escape 有测试。
+大规模删除需要 dry-run/confirmation。
+全局 kill 不是正常 stop 流程。
+Root Service 连续 crash 会进入 Safe Mode。
+30. API / DB / 工程文件交付清单
+文件	用途
+openapi-v1.yaml	机器可读 API 定义
+schema-v1.sql	SQLite Schema
+project-structure-v1.md	代码仓库目录与运行时路径
+repo-change-plan-v1.md	上游仓库到产品版改造清单
+本 DOCX	需求与实施规格总文档
+31. 开发顺序
+11.建立 Magisk product branch：保留上游 FUSE3/rclone packaging。
+12.新增 Gateway，首先只实现 health/info + Unix socket。
+13.实现 Client registration + token + Scope。
+14.实现 Remote metadata + Secret Store。
+15.实现 File list/read-only，再实现 write/delete。
+16.实现 Job + job_run + recovery。
+17.实现旧 sync/copy 迁移。
+18.实现 Mount Profile 与 Android FUSE regression。
+19.实现 LAN pairing/TLS。
+20.最后再逐步开放高级 rclone 参数。
+32. 不进入 V1.1 的功能
+把原始 rclone Web GUI 直接当作产品主 UI。可以保留为高级维护入口，但必须独立认证与隔离。
+把所有 rclone RC endpoint 透明代理给 App。
+内置任意 shell/命令执行。
+互联网公网直接暴露 Gateway。
+为了“方便”关闭所有路径 ACL / dangerous confirmation。
+33. 上游与官方参考
+NewFuture/rclone-fuse3-magisk: https://github.com/NewFuture/rclone-fuse3-magisk
+上游 service.sh: https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/service.sh
+上游 sync.service.sh: https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/sync.service.sh
+上游 env: https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/env
+上游 rclone-mount: https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/system/vendor/bin/rclone-mount
+上游 rclone-kill-all: https://raw.githubusercontent.com/NewFuture/rclone-fuse3-magisk/main/magisk-rclone/system/vendor/bin/rclone-kill-all
+rclone Remote Control: https://rclone.org/rc/
+rclone Mount: https://rclone.org/commands/rclone_mount/
+rclone Crypt: https://rclone.org/crypt/
+rclone Documentation: https://rclone.org/docs/
+34. 最终结论
+V1.1 的核心不是重新实现 rclone，而是围绕已有 Magisk + FUSE3 + rclone 能力增加一个可靠的 Root Gateway 和持久化控制平面。这样可以把现有仓库从“脚本集合”演进为“系统服务 + 数据引擎 + Android 控制面”。
+产品最重要的三个边界：App 不执行数据面；Gateway 不开放 raw RC；Magisk 不等于权限模型。只要这三个边界稳定，后续增加 provider、任务类型、挂载能力和控制端都不需要大改架构。

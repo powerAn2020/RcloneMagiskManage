@@ -1,0 +1,3 @@
+[submodule "external/rclone-fuse3-magisk"]
+	path = external/rclone-fuse3-magisk
+	url = https://github.com/NewFuture/rclone-fuse3-magisk.git

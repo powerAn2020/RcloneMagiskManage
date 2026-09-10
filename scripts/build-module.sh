@@ -61,14 +61,22 @@ cp "$ROOT/target/$TARGET/release/rclone-gateway" "$OUT/bin/rclone-gateway"
 
 # 2. Copy integrated rclone and fusermount3 binaries (All-in-One, no external module)
 PREBUILT_DIR="$ROOT/magisk-module/prebuilt/$ABI"
-if [ -d "$PREBUILT_DIR" ]; then
+SUBMODULE_BIN_DIR="$ROOT/external/rclone-fuse3-magisk/magisk-rclone_$ABI/system/vendor/bin"
+
+if [ -f "$PREBUILT_DIR/rclone" ] && [ -f "$PREBUILT_DIR/fusermount3" ]; then
   echo "Integrating prebuilt binaries from $PREBUILT_DIR..."
-  [ -f "$PREBUILT_DIR/rclone" ] && cp "$PREBUILT_DIR/rclone" "$OUT/bin/rclone"
-  [ -f "$PREBUILT_DIR/fusermount3" ] && cp "$PREBUILT_DIR/fusermount3" "$OUT/bin/fusermount3"
+  cp "$PREBUILT_DIR/rclone" "$OUT/bin/rclone"
+  cp "$PREBUILT_DIR/fusermount3" "$OUT/bin/fusermount3"
+elif [ -f "$SUBMODULE_BIN_DIR/rclone" ] && [ -f "$SUBMODULE_BIN_DIR/fusermount3" ]; then
+  echo "Integrating binaries from submodule build $SUBMODULE_BIN_DIR..."
+  cp "$SUBMODULE_BIN_DIR/rclone" "$OUT/bin/rclone"
+  cp "$SUBMODULE_BIN_DIR/fusermount3" "$OUT/bin/fusermount3"
 elif [ -f "$ROOT/scratch/unpacked_magisk_rclone/system/vendor/bin/rclone" ] && [ "$ABI" = "x86_64" ]; then
   echo "Integrating prebuilt binaries from scratch cache..."
   cp "$ROOT/scratch/unpacked_magisk_rclone/system/vendor/bin/rclone" "$OUT/bin/rclone"
   cp "$ROOT/scratch/unpacked_magisk_rclone/system/vendor/bin/fusermount3" "$OUT/bin/fusermount3"
+else
+  echo "⚠️ Warning: rclone and fusermount3 not found for $ABI (looked in prebuilt and submodule)"
 fi
 
 # 3. Copy module scripts (Pure service module, no system/ directory)

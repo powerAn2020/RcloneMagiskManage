@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -76,6 +78,24 @@ jobs:
           echo "Using Android NDK at: $NDK_PATH"
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_LATEST_HOME=$NDK_PATH" >> "$GITHUB_ENV"
+
+      - name: Build and Extract rclone-fuse3-magisk Binaries
+        run: |
+          pip install meson ninja
+          cd external/rclone-fuse3-magisk
+          chmod +x patch.sh build.sh scripts/*.sh
+          ./patch.sh
+          echo "=== Building arm64-v8a in submodule ==="
+          ./build.sh arm64-v8a
+          echo "=== Building x86_64 in submodule ==="
+          ./build.sh x86_64
+          cd ../..
+          mkdir -p magisk-module/prebuilt/arm64-v8a magisk-module/prebuilt/x86_64
+          cp external/rclone-fuse3-magisk/magisk-rclone_arm64-v8a/system/vendor/bin/rclone magisk-module/prebuilt/arm64-v8a/
+          cp external/rclone-fuse3-magisk/magisk-rclone_arm64-v8a/system/vendor/bin/fusermount3 magisk-module/prebuilt/arm64-v8a/
+          cp external/rclone-fuse3-magisk/magisk-rclone_x86_64/system/vendor/bin/rclone magisk-module/prebuilt/x86_64/
+          cp external/rclone-fuse3-magisk/magisk-rclone_x86_64/system/vendor/bin/fusermount3 magisk-module/prebuilt/x86_64/
+          chmod +x magisk-module/prebuilt/*/*
 
       - name: Build Magisk Modules (x86_64 and arm64)
         run: |

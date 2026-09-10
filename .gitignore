@@ -18,3 +18,9 @@ app/.gradle/
 app/.idea/
 local.properties
 app/local.properties
+
+.agents/
+.gemini/
+.kotlin/
+.vscode/
+.cache/
