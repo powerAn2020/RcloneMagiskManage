@@ -22,7 +22,6 @@ use crate::types::{Health, Info};
 pub async fn health() -> Json<Health> {
     Json(Health {
         status: "ok",
-        api_version: API_VERSION,
         auth: "configured",
     })
 }
@@ -567,9 +566,11 @@ pub async fn logs_clear(
             }
         }
     }
-    let audit_cleared = {
+    let audit_cleared = if crate::security::auth::has_scope(&h, &s, "admin.*") {
         let conn = db(&s)?;
         conn.execute("DELETE FROM audit_log", [])?
+    } else {
+        0
     };
     audit(
         &s,

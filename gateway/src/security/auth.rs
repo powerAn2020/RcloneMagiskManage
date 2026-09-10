@@ -104,6 +104,23 @@ pub fn verify_signature(
         tx.rollback()?;
         return Err(GatewayError::Message("AUTH replay detected".into()));
     }
+    let count: i64 = tx
+        .query_row(
+            "SELECT COUNT(1) FROM system_config WHERE key LIKE 'request-nonce:%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if count > 1000 {
+        let _ = tx.execute(
+            "DELETE FROM system_config WHERE key LIKE 'request-nonce:%' AND updated_at<?",
+            params![now()],
+        );
+    }
+    if count > 5000 {
+        tx.rollback()?;
+        return Err(GatewayError::Message("RATE_LIMITED: nonce cache saturated".into()));
+    }
     tx.execute(
         "INSERT INTO system_config(key,value,updated_at) VALUES(?,?,?)",
         params![key, "1", now() + 60],

@@ -150,6 +150,7 @@ fun SecurityScreen(
     var isRefreshingIps by remember { mutableStateOf(false) }
     var lanPortInput by remember { mutableStateOf("8443") }
     var isLanUpdating by remember { mutableStateOf(false) }
+    var showAutoPairAdminDialog by remember { mutableStateOf(false) }
 
     val loadLanConfig = {
         scope.launch {
@@ -241,19 +242,7 @@ fun SecurityScreen(
                     if (showRePairOptions) {
                         Spacer(Modifier.height(4.dp))
                         OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    client.autoPair().fold(
-                                        onSuccess = { token ->
-                                            tokenStore.write(token)
-                                            onTokenUpdated(token)
-                                            onShowMessage("重新配对成功！新 Token 已加密生效")
-                                            loadClients()
-                                        },
-                                        onFailure = { onShowMessage("自动配对失败: ${it.message}") }
-                                    )
-                                }
-                            },
+                            onClick = { showAutoPairAdminDialog = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null)
@@ -278,19 +267,7 @@ fun SecurityScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Button(
-                        onClick = {
-                            scope.launch {
-                                client.autoPair().fold(
-                                    onSuccess = { token ->
-                                        tokenStore.write(token)
-                                        onTokenUpdated(token)
-                                        onShowMessage("配对成功！Token 已自动加密保存并生效")
-                                        loadClients()
-                                    },
-                                    onFailure = { onShowMessage("自动配对失败: ${it.message}") }
-                                )
-                            }
-                        },
+                        onClick = { showAutoPairAdminDialog = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Bolt, contentDescription = null)
@@ -776,15 +753,27 @@ fun SecurityScreen(
         var inputCode by remember { mutableStateOf(TextFieldValue("")) }
         var inputClientName by remember { mutableStateOf(TextFieldValue("Android Controller")) }
         var inputPublicKey by remember { mutableStateOf(TextFieldValue("android-local-key")) }
+        var inputGrantAdmin by remember { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = { showPairingCompleteDialog = false },
             title = { Text("手动完成配对与令牌发放", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MaterialTextField(value = inputCode, onValueChange = { inputCode = it }, label = "6位一次性配对码")
+                    MaterialTextField(value = inputCode, onValueChange = { inputCode = it }, label = "8位一次性配对码")
                     MaterialTextField(value = inputClientName, onValueChange = { inputClientName = it }, label = "客户端标识名称")
                     MaterialTextField(value = inputPublicKey, onValueChange = { inputPublicKey = it }, label = "公钥 / 设备签名指纹")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("授予管理员特权", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text("允许导出明文凭据与清空审计日志", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = inputGrantAdmin, onCheckedChange = { inputGrantAdmin = it })
+                    }
                 }
             },
             confirmButton = {
@@ -793,9 +782,9 @@ fun SecurityScreen(
                         val code = inputCode.text.trim()
                         val name = inputClientName.text.trim().ifBlank { "Android Controller" }
                         val pubKey = inputPublicKey.text.trim().ifBlank { "device" }
-                        if (code.length == 6) {
+                        if (code.length == 8 || code.length == 6) {
                             scope.launch {
-                                client.pairingComplete(code, name, pubKey).fold(
+                                client.pairingComplete(code, name, pubKey, inputGrantAdmin).fold(
                                     onSuccess = { res ->
                                         val json = JSONObject(res)
                                         val token = json.optString("token")
@@ -806,7 +795,7 @@ fun SecurityScreen(
                                             pairingExpiresAt = null
                                             pairingRemainingSeconds = 0
                                         }
-                                        onShowMessage("配对成功！令牌已自动加密落盘并生效")
+                                        onShowMessage(if (inputGrantAdmin) "配对成功！已获取管理员特权令牌" else "配对成功！已获取常规权限令牌")
                                         showPairingCompleteDialog = false
                                         loadClients()
                                     },
@@ -814,7 +803,7 @@ fun SecurityScreen(
                                 )
                             }
                         } else {
-                            onShowMessage("请输入6位配对码")
+                            onShowMessage("请输入有效的一次性配对码（8位）")
                         }
                     }
                 ) {
@@ -823,6 +812,61 @@ fun SecurityScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showPairingCompleteDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    if (showAutoPairAdminDialog) {
+        AlertDialog(
+            onDismissRequest = { showAutoPairAdminDialog = false },
+            title = { Text("配对授权确认", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("是否授予本地伴侣端管理员权限？\n\n• 常规权限：允许文件、远端、挂载管理与任务调度（推荐日常使用）。\n• 管理员特权：额外允许导出云存储明文密钥和清空审计日志。")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAutoPairAdminDialog = false
+                        scope.launch {
+                            client.autoPair(grantAdmin = true).fold(
+                                onSuccess = { token ->
+                                    tokenStore.write(token)
+                                    onTokenUpdated(token)
+                                    onShowMessage("配对成功！已获取管理员特权令牌并加密生效")
+                                    loadClients()
+                                },
+                                onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                            )
+                        }
+                    }
+                ) {
+                    Text("授予管理员特权")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { showAutoPairAdminDialog = false }) {
+                        Text("取消")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            showAutoPairAdminDialog = false
+                            scope.launch {
+                                client.autoPair(grantAdmin = false).fold(
+                                    onSuccess = { token ->
+                                        tokenStore.write(token)
+                                        onTokenUpdated(token)
+                                        onShowMessage("配对成功！已获取常规权限令牌并加密生效")
+                                        loadClients()
+                                    },
+                                    onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                                )
+                            }
+                        }
+                    ) {
+                        Text("仅常规权限")
+                    }
+                }
             }
         )
     }

@@ -20,9 +20,9 @@ pub async fn pair_start(
     h: HeaderMap,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
     if s.require_signature {
-        let _ = scope(&h, &s, "security.write")?;
+        scope(&h, &s, "security.write")?;
     }
-    let c = format!("{:06}", rand::random::<u32>() % 1_000_000);
+    let c = format!("{:08}", rand::random::<u32>() % 100_000_000);
     s.pairing.write().await.insert(c.clone(), now() + 60);
     Ok((
         StatusCode::CREATED,
@@ -36,8 +36,9 @@ pub async fn pair_cancel(
     body: Option<Json<serde_json::Value>>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
     if s.require_signature {
-        let _ = scope(&h, &s, "security.write")?;
+        scope(&h, &s, "security.write")?;
     }
+
     let code_opt = body.and_then(|Json(b)| {
         b.get("pairingCode")
             .or_else(|| b.get("pairing_code"))
@@ -141,8 +142,8 @@ pub async fn pair_complete(
     let token_expires = now() + 30 * 24 * 3600;
     c.execute("INSERT INTO client(id,name,package_name,public_key,token_hash,status,created_at,token_expires_at) VALUES(?,?,?,?,?,'ACTIVE',?,?)",params![id,i.client_name,i.package_name,i.public_key,hash(&tok),now(),token_expires])?;
 
-    let initial_scopes: &[&str] = if s.require_signature {
-        &[
+    let initial_scopes: Vec<&str> = if s.require_signature {
+        vec![
             "system.read",
             "remote.read",
             "remote.write",
@@ -156,7 +157,7 @@ pub async fn pair_complete(
             "audit.read",
         ]
     } else {
-        &[
+        let mut base = vec![
             "system.read",
             "remote.read",
             "remote.write",
@@ -172,9 +173,11 @@ pub async fn pair_complete(
             "audit.read",
             "security.read",
             "security.write",
-            "admin.*",
-            "*",
-        ]
+        ];
+        if i.grant_admin.unwrap_or(false) {
+            base.push("admin.*");
+        }
+        base
     };
 
     for initial in initial_scopes {

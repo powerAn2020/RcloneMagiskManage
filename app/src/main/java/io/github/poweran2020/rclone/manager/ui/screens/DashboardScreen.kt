@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -73,6 +74,7 @@ fun DashboardScreen(
     val scope = rememberCoroutineScope()
     var isRefreshing by remember { mutableStateOf(false) }
     var healthStatus by remember { mutableStateOf("CONNECTING") }
+    var showAdminGrantDialog by remember { mutableStateOf(false) }
     var healthError by remember { mutableStateOf<String?>(null) }
     var systemInfo by remember { mutableStateOf<SystemInfoItem?>(null) }
     var remotesCount by remember { mutableStateOf(0) }
@@ -389,19 +391,7 @@ fun DashboardScreen(
                     if (bearer.isBlank()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
-                                onClick = {
-                                    scope.launch {
-                                        isRefreshing = true
-                                        client.autoPair().fold(
-                                            onSuccess = {
-                                                onTokenUpdated(it)
-                                                onShowMessage("配对成功！已获取并在 Keystore 保存凭据")
-                                            },
-                                            onFailure = { onShowMessage("自动配对失败: ${it.message}") }
-                                        )
-                                        refreshDashboard()
-                                    }
-                                }
+                                onClick = { showAdminGrantDialog = true }
                             ) {
                                 Text("一键配对")
                             }
@@ -458,5 +448,58 @@ fun DashboardScreen(
                 )
             }
         }
+    }
+
+    if (showAdminGrantDialog) {
+        AlertDialog(
+            onDismissRequest = { showAdminGrantDialog = false },
+            title = { Text("配对授权确认", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            text = {
+                Text("是否授予本地伴侣端管理员权限？\n\n• 常规权限：允许文件、远端、挂载管理与任务调度（推荐日常使用）。\n• 管理员特权：额外允许导出云存储明文密钥和清空审计日志。")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAdminGrantDialog = false
+                        scope.launch {
+                            isRefreshing = true
+                            client.autoPair(grantAdmin = true).fold(
+                                onSuccess = {
+                                    onTokenUpdated(it)
+                                    onShowMessage("配对成功！已获取管理员特权令牌")
+                                },
+                                onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                            )
+                            refreshDashboard()
+                        }
+                    }
+                ) {
+                    Text("授予管理员特权")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton("取消", onClick = { showAdminGrantDialog = false })
+                    OutlinedButton(
+                        onClick = {
+                            showAdminGrantDialog = false
+                            scope.launch {
+                                isRefreshing = true
+                                client.autoPair(grantAdmin = false).fold(
+                                    onSuccess = {
+                                        onTokenUpdated(it)
+                                        onShowMessage("配对成功！已获取常规权限令牌")
+                                    },
+                                    onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                                )
+                                refreshDashboard()
+                            }
+                        }
+                    ) {
+                        Text("仅常规权限")
+                    }
+                }
+            }
+        )
     }
 }

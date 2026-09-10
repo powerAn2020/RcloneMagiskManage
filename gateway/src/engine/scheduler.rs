@@ -180,8 +180,12 @@ pub fn job_accessible(s: &AppState, client: &str, id: &str) -> Result<()> {
     let source_permission = job_source_permission(&kind);
     validate_transfer_endpoint(s, client, &source, source_permission)?;
     if !destination.is_empty() {
-        validate_transfer_endpoint(s, client, &destination, "file.read")
-            .or_else(|_| validate_transfer_endpoint(s, client, &destination, "file.write"))?;
+        let dest_perm = if matches!(kind.as_str(), "sync" | "copy" | "move" | "bisync") {
+            "file.write"
+        } else {
+            "file.read"
+        };
+        validate_transfer_endpoint(s, client, &destination, dest_perm)?;
     }
     Ok(())
 }
@@ -417,7 +421,11 @@ pub async fn run_job(state: AppState, id: String) {
         if let Some(v) = raw
             .get("bwLimit")
             .and_then(|v| v.as_str())
-            .filter(|v| crate::security::crypto::ini_line_safe(v) && v.len() <= 64)
+            .filter(|v| {
+                !v.is_empty()
+                    && v.len() <= 64
+                    && v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | ',' | ' ' | '.'))
+            })
         {
             command.args(["--bwlimit", v]);
         }

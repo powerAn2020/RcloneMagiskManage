@@ -44,11 +44,21 @@ pub fn master_key(root: &FsPath) -> Result<[u8; 32]> {
     }
     let mut k = [0; 32];
     rand::rng().fill_bytes(&mut k);
-    fs::write(&p, k)?;
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&p, fs::Permissions::from_mode(0o600))?;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&p)?;
+        file.write_all(&k)?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(&p, k)?;
     }
     Ok(k)
 }
@@ -205,6 +215,26 @@ pub fn is_rclone_password_key(key: &str) -> bool {
         || lower.ends_with("_password")
         || lower.ends_with("_secret")
         || lower.ends_with("_token")
+}
+
+pub fn is_sensitive_export_key(key: &str) -> bool {
+    if is_rclone_password_key(key) {
+        return true;
+    }
+    let lower = key.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "access_key_id"
+            | "access_key"
+            | "client_id"
+            | "client_secret"
+            | "account_id"
+            | "account_key"
+            | "api_key"
+            | "key_id"
+    ) || lower.ends_with("_client_id")
+        || lower.ends_with("_key_id")
+        || lower.ends_with("_account_id")
 }
 
 pub fn safe_request_segment(segment: &str) -> bool {

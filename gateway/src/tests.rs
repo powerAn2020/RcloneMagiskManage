@@ -1009,6 +1009,11 @@ info line"#,
             )
             .unwrap();
             conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c_clear','admin.*','*',NULL)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
                 "INSERT INTO audit_log(timestamp,client_id,operation,result) VALUES(100,'c_clear','old.op','SUCCESS')",
                 [],
             )
@@ -1505,7 +1510,7 @@ info line"#,
         // 1. Start pairing -> generates code (60s lifetime)
         let (_, Json(start_res)) = pair_start(axum::extract::State(state.clone()), HeaderMap::new()).await.unwrap();
         let code = start_res["pairingCode"].as_str().unwrap().to_string();
-        assert_eq!(code.len(), 6);
+        assert_eq!(code.len(), 8);
         assert_eq!(start_res["expiresIn"], 60);
         assert!(state.pairing.read().await.contains_key(&code));
 
@@ -1530,6 +1535,7 @@ info line"#,
                 client_name: "test-client".into(),
                 public_key: Some("test-key".into()),
                 package_name: None,
+                grant_admin: None,
             }),
         )
         .await;
@@ -1557,10 +1563,11 @@ info line"#,
                 axum::extract::State(state.clone()),
                 attacker_source.clone(),
                 axum::extract::Json(Pair {
-                    pairing_code: "000000".into(),
+                    pairing_code: "00000000".into(),
                     client_name: format!("attacker-{}", i), // Even if attacker changes client name, IP binds rate limit!
                     public_key: Some("key".into()),
                     package_name: None,
+                    grant_admin: None,
                 }),
             )
             .await;
@@ -1574,10 +1581,11 @@ info line"#,
             axum::extract::State(state.clone()),
             attacker_source.clone(),
             axum::extract::Json(Pair {
-                pairing_code: "000000".into(),
+                pairing_code: "00000000".into(),
                 client_name: "attacker-changing-name".into(),
                 public_key: Some("key".into()),
                 package_name: None,
+                grant_admin: None,
             }),
         )
         .await;
@@ -1592,10 +1600,11 @@ info line"#,
             axum::extract::State(state.clone()),
             attacker_source.clone(),
             axum::extract::Json(Pair {
-                pairing_code: "000000".into(),
+                pairing_code: "00000000".into(),
                 client_name: "attacker".into(),
                 public_key: Some("key".into()),
                 package_name: None,
+                grant_admin: None,
             }),
         )
         .await;
@@ -1612,6 +1621,7 @@ info line"#,
                 client_name: "legitimate_app".into(),
                 public_key: Some("valid-key".into()),
                 package_name: None,
+                grant_admin: Some(true),
             }),
         )
         .await;
@@ -1619,6 +1629,54 @@ info line"#,
         let (status, Json(pair_res)) = legit_res.unwrap();
         assert_eq!(status, axum::http::StatusCode::CREATED);
         assert!(!pair_res.token.is_empty());
+
+        // 7. Test local Unix socket pairing without grant_admin -> admin.* NOT present
+        let (_, Json(start_local1)) = pair_start(axum::extract::State(state.clone()), HeaderMap::new()).await.unwrap();
+        let code_local1 = start_local1["pairingCode"].as_str().unwrap().to_string();
+        let (_, Json(res_local1)) = pair_complete(
+            axum::extract::State(state.clone()),
+            Some(Extension(ClientSource::UnixSocket)),
+            axum::extract::Json(Pair {
+                pairing_code: code_local1,
+                client_name: "local_app_default".into(),
+                public_key: Some("key".into()),
+                package_name: None,
+                grant_admin: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let scopes1: Vec<String> = {
+            let conn = state.db.lock().unwrap();
+            let mut stmt = conn.prepare("SELECT scope FROM permission_grant WHERE client_id=?").unwrap();
+            stmt.query_map([&res_local1.client_id], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+        };
+        assert!(!scopes1.contains(&"admin.*".to_string()));
+        assert!(!scopes1.contains(&"*".to_string()));
+        assert!(scopes1.contains(&"remote.read".to_string()));
+
+        // 8. Test local Unix socket pairing WITH grant_admin: Some(true) -> admin.* IS granted
+        let (_, Json(start_local2)) = pair_start(axum::extract::State(state.clone()), HeaderMap::new()).await.unwrap();
+        let code_local2 = start_local2["pairingCode"].as_str().unwrap().to_string();
+        let (_, Json(res_local2)) = pair_complete(
+            axum::extract::State(state.clone()),
+            Some(Extension(ClientSource::UnixSocket)),
+            axum::extract::Json(Pair {
+                pairing_code: code_local2,
+                client_name: "local_app_admin".into(),
+                public_key: Some("key".into()),
+                package_name: None,
+                grant_admin: Some(true),
+            }),
+        )
+        .await
+        .unwrap();
+        let scopes2: Vec<String> = {
+            let conn = state.db.lock().unwrap();
+            let mut stmt = conn.prepare("SELECT scope FROM permission_grant WHERE client_id=?").unwrap();
+            stmt.query_map([&res_local2.client_id], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+        };
+        assert!(scopes2.contains(&"admin.*".to_string()));
 
         let _ = fs::remove_dir_all(&state.root);
     }
@@ -1665,6 +1723,7 @@ info line"#,
                 client_name: "lan-client".into(),
                 public_key: Some("lan-device".into()),
                 package_name: None,
+                grant_admin: None,
             }),
         )
         .await

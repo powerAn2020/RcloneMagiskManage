@@ -620,6 +620,12 @@ pub async fn remote_export(
 
                         redacted_ini_lines.push(format!("{} = ***REDACTED***", k));
                         redacted_json_map.insert(k.clone(), serde_json::Value::String("***REDACTED***".to_string()));
+                    } else if crate::security::crypto::is_sensitive_export_key(k) {
+                        full_ini_lines.push(format!("{} = {}", k, trimmed));
+                        full_json_map.insert(k.clone(), v.clone());
+
+                        redacted_ini_lines.push(format!("{} = ***REDACTED***", k));
+                        redacted_json_map.insert(k.clone(), serde_json::Value::String("***REDACTED***".to_string()));
                     } else {
                         full_ini_lines.push(format!("{} = {}", k, trimmed));
                         full_json_map.insert(k.clone(), v.clone());

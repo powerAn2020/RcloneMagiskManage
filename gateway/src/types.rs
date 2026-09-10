@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize)]
 pub struct Health {
     pub status: &'static str,
-    pub api_version: &'static str,
     pub auth: &'static str,
 }
 
@@ -26,6 +25,7 @@ pub struct Pair {
     pub client_name: String,
     pub public_key: Option<String>,
     pub package_name: Option<String>,
+    pub grant_admin: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]

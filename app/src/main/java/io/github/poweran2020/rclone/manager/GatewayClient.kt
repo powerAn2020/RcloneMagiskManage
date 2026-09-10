@@ -106,8 +106,8 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun deleteConfirmed(remoteId: String, path: String, confirmationToken: String, token: String): Result<String> =
         request("POST", "/api/v1/files/delete", token, JSONObject().put("remoteId", remoteId).put("path", path).put("dryRun", false).put("confirmationToken", confirmationToken))
 
-    suspend fun pairingComplete(code: String, name: String, publicKey: String): Result<String> =
-        request("POST", "/api/v1/security/pairing/complete", body = JSONObject().put("pairingCode", code).put("clientName", name).put("publicKey", publicKey))
+    suspend fun pairingComplete(code: String, name: String, publicKey: String, grantAdmin: Boolean = false): Result<String> =
+        request("POST", "/api/v1/security/pairing/complete", body = JSONObject().put("pairingCode", code).put("clientName", name).put("publicKey", publicKey).put("grantAdmin", grantAdmin))
     suspend fun pairingStart(): Result<String> = request("POST", "/api/v1/security/pairing/start")
     suspend fun pairingCancel(code: String? = null): Result<String> {
         val body = if (code != null) JSONObject().put("pairingCode", code) else null
@@ -233,11 +233,11 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         }
     }
 
-    suspend fun autoPair(clientName: String = "RcloneManagerApp"): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun autoPair(clientName: String = "RcloneManagerApp", grantAdmin: Boolean = false): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val startRes = pairingStart().getOrThrow()
             val code = JSONObject(startRes).getString("pairingCode")
-            val completeRes = pairingComplete(code, clientName, "device").getOrThrow()
+            val completeRes = pairingComplete(code, clientName, "device", grantAdmin).getOrThrow()
             val token = JSONObject(completeRes).getString("token")
             token
         }
