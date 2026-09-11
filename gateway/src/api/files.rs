@@ -45,20 +45,43 @@ pub async fn files(
         .map_err(|_| GatewayError::Message("remote not found".into()))?;
     let path = valid_path(p, &base)?;
     let config = materialize_rclone_config(&s, std::slice::from_ref(&q.remote_id))?;
-    let o = rclone_command(&config)
+    let output_future = rclone_command(&config)
         .args([
             "lsjson",
             &format!("{name}:{path}"),
             "--max-depth",
             "1",
+            "--contimeout",
+            "3s",
+            "--timeout",
+            "5s",
+            "--retries",
+            "1",
+            "--low-level-retries",
+            "1",
         ])
-        .output()
-        .await?;
+        .output();
+    let o = match tokio::time::timeout(std::time::Duration::from_secs(6), output_future).await {
+        Ok(res) => res?,
+        Err(_) => {
+            if let Some(p) = config {
+                let _ = fs::remove_file(p);
+            }
+            return Err(GatewayError::Message(
+                "remote listing timed out (远端连接超时，请检查网络或配置)".into(),
+            ));
+        }
+    };
     if let Some(p) = config {
         let _ = fs::remove_file(p);
     }
     if !o.status.success() {
-        return Err(GatewayError::Message("rclone listing failed".into()));
+        let err_msg = String::from_utf8_lossy(&o.stderr);
+        let first_err = err_msg
+            .lines()
+            .find(|l| l.contains("ERROR") || l.contains("Failed to"))
+            .unwrap_or("rclone listing failed");
+        return Err(GatewayError::Message(first_err.to_string()));
     }
     let mut v: serde_json::Value = serde_json::from_slice(&o.stdout)
         .map_err(|_| GatewayError::Message("invalid rclone response".into()))?;

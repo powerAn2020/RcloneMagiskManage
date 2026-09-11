@@ -588,3 +588,40 @@ pub async fn logs_clear(
         "auditRecordsCleared": audit_cleared
     })))
 }
+
+#[derive(serde::Deserialize)]
+pub struct LogsCoreQuery {
+    pub lines: Option<usize>,
+}
+
+pub async fn logs_core(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<LogsCoreQuery>,
+) -> Result<Json<serde_json::Value>> {
+    scope(&h, &s, "system.read")?;
+    let log_path = s.root.join("logs/gateway.log");
+    let lines_limit = q.lines.unwrap_or(500).clamp(1, 5000);
+    let (content, total_lines, size_bytes) = if log_path.exists() {
+        let size = fs::metadata(&log_path).map(|m| m.len()).unwrap_or(0);
+        let file = fs::File::open(&log_path)?;
+        let reader = std::io::BufReader::new(file);
+        use std::io::BufRead;
+        let all_lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        let total = all_lines.len();
+        let start = total.saturating_sub(lines_limit);
+        let slice = &all_lines[start..];
+        (slice.join("\n"), total, size)
+    } else {
+        (String::new(), 0, 0)
+    };
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "path": log_path.display().to_string(),
+        "totalLines": total_lines,
+        "returnedLines": lines_limit,
+        "sizeBytes": size_bytes,
+        "content": content
+    })))
+}
+

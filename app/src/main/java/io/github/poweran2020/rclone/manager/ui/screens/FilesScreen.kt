@@ -120,9 +120,11 @@ fun FilesScreen(
     var isCalculatingPreview by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
     var activeTransfer by remember { mutableStateOf<ActiveTransfer?>(null) }
+    var loadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     val loadDirectory = { remoteId: String, path: String ->
-        scope.launch {
+        loadJob?.cancel()
+        loadJob = scope.launch {
             isLoading = true
             client.listFiles(remoteId, path, bearer).fold(
                 onSuccess = { raw ->

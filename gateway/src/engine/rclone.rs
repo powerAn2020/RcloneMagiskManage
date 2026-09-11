@@ -50,6 +50,7 @@ pub fn rclone_command(config: &Option<PathBuf>) -> Command {
         _ => module_bin.to_string(),
     };
     c.env("PATH", new_path);
+    c.kill_on_drop(true);
     if let Some(path) = config {
         c.arg("--config").arg(path);
     }
@@ -206,6 +207,85 @@ pub fn materialize_mount_config(s: &AppState, id: &str, remote_id: &str) -> Resu
     materialize_rclone_config_at(s, &[remote_id.to_owned()], Some(path))?
         .ok_or_else(|| GatewayError::Message("remote has no usable configuration".into()))
 }
+
+pub fn materialize_adhoc_remote_config(
+    s: &AppState,
+    name: &str,
+    typ: &str,
+    endpoint: Option<&str>,
+    secret: Option<&serde_json::Value>,
+) -> Result<PathBuf> {
+    if !ini_line_safe(name)
+        || !ini_line_safe(typ)
+        || !typ
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(GatewayError::Message("invalid remote configuration".into()));
+    }
+    let mut text = format!("[{name}]\ntype = {typ}\n");
+    let mut written_keys = std::collections::HashSet::new();
+
+    if let Some(sec) = secret {
+        if let Some(obj) = sec.as_object() {
+            for (k, v) in obj {
+                if !k
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                {
+                    return Err(GatewayError::Message("invalid secret key".into()));
+                }
+                let value = v
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| v.to_string());
+                if !ini_line_safe(&value) {
+                    return Err(GatewayError::Message("invalid secret value".into()));
+                }
+                let trimmed = value.trim();
+                if trimmed.is_empty() || trimmed == "[]" || trimmed == "{}" {
+                    continue;
+                }
+                let final_val = if is_rclone_password_key(k) && !is_rclone_obscured(trimmed) {
+                    obscure_rclone(trimmed)?
+                } else {
+                    trimmed.to_string()
+                };
+                text.push_str(&format!("{k} = {final_val}\n"));
+                written_keys.insert(k.clone());
+            }
+        }
+    }
+
+    if typ == "webdav" {
+        if !written_keys.contains("url") {
+            if let Some(e) = endpoint {
+                if ini_line_safe(e) {
+                    text.push_str(&format!("url = {e}\n"));
+                }
+            }
+        }
+        if !written_keys.contains("vendor") {
+            text.push_str("vendor = other\n");
+        }
+    } else if typ == "s3" {
+        if !written_keys.contains("endpoint") {
+            if let Some(e) = endpoint {
+                if ini_line_safe(e) {
+                    text.push_str(&format!("endpoint = {e}\n"));
+                }
+            }
+        }
+    }
+
+    let runtime_dir = s.root.join("runtime");
+    let _ = fs::create_dir_all(&runtime_dir);
+    let path = runtime_dir.join(format!("rclone-test-{}.conf", Uuid::new_v4()));
+    fs::write(&path, text)?;
+    restrict_file(&path)?;
+    Ok(path)
+}
+
 
 pub fn materialize_crypt_config(s: &AppState, id: &str) -> Result<(PathBuf, String)> {
     let (name, remote_id, remote_path, secret_ref, parent_name):

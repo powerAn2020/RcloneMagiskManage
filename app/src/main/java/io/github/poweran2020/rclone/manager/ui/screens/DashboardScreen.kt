@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -57,6 +58,7 @@ import io.github.poweran2020.rclone.manager.data.model.parseMounts
 import io.github.poweran2020.rclone.manager.data.model.parseRemotes
 import io.github.poweran2020.rclone.manager.data.model.parseSystemInfo
 import io.github.poweran2020.rclone.manager.ui.component.ContentCard
+import io.github.poweran2020.rclone.manager.ui.component.CoreLogDialog
 import io.github.poweran2020.rclone.manager.ui.component.InfoRow
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
@@ -77,6 +79,7 @@ fun DashboardScreen(
     var isRefreshing by remember { mutableStateOf(false) }
     var healthStatus by remember { mutableStateOf("CONNECTING") }
     var showAdminGrantDialog by remember { mutableStateOf(false) }
+    var showCoreLogDialog by remember { mutableStateOf(false) }
     var healthError by remember { mutableStateOf<String?>(null) }
     var systemInfo by remember { mutableStateOf<SystemInfoItem?>(null) }
     var remotesCount by remember { mutableStateOf(0) }
@@ -248,6 +251,17 @@ fun DashboardScreen(
                         Text(stringResource(R.string.action_restart), maxLines = 1, softWrap = false)
                     }
                 }
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = { showCoreLogDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("查看核心运行日志", style = MaterialTheme.typography.bodySmall)
+                }
                 if (!healthError.isNullOrBlank()) {
                     Spacer(Modifier.height(8.dp))
                     val clipboard = LocalClipboardManager.current
@@ -330,6 +344,19 @@ fun DashboardScreen(
                                         fontFamily = FontFamily.Monospace,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                androidx.compose.material3.TextButton(
+                                    onClick = { showCoreLogDialog = true }
+                                ) {
+                                    Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("查看核心日志排障", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -515,6 +542,16 @@ fun DashboardScreen(
                     }
                 }
             }
+        )
+    }
+
+    if (showCoreLogDialog) {
+        CoreLogDialog(
+            show = true,
+            client = client,
+            bearer = bearer,
+            onDismiss = { showCoreLogDialog = false },
+            onShowMessage = onShowMessage
         )
     }
 }

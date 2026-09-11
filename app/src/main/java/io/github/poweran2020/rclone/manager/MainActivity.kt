@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
         Shell.setDefaultBuilder(
             Shell.Builder.create()
                 .setFlags(Shell.FLAG_MOUNT_MASTER)
-                .setTimeout(10)
+                .setTimeout(45)
         )
         appPreferences = AppPreferences(this)
         themeModeState.value = appPreferences.getThemeMode()
@@ -108,7 +108,10 @@ class MainActivity : ComponentActivity() {
             val localizedContext = remember(appLanguageState.value) {
                 LocaleUtil.getLocalizedContext(this@MainActivity, appLanguageState.value)
             }
-            CompositionLocalProvider(LocalContext provides localizedContext) {
+            CompositionLocalProvider(
+                LocalContext provides localizedContext,
+                androidx.activity.compose.LocalActivityResultRegistryOwner provides this@MainActivity
+            ) {
                 RcloneTheme(themeMode = themeModeState.value) {
                     RcloneApp(
                         client = client,
@@ -141,6 +144,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         checkRootPermission(forceRefresh = rootStatusState.value == RootStatus.DENIED)
+        if (rootStatusState.value == RootStatus.GRANTED) {
+            activityScope.launch(Dispatchers.IO) {
+                runCatching { client.ensureServiceRunning() }
+            }
+        }
     }
 
     private fun checkRootPermission(forceRefresh: Boolean = false, initial: Boolean = false) {
@@ -155,10 +163,11 @@ class MainActivity : ComponentActivity() {
                 val hasRoot = runCatching {
                     Shell.getShell().isRoot
                 }.getOrDefault(false)
-                if (!hasRoot) {
-                    runCatching { client.health().isSuccess }.getOrDefault(false)
-                } else {
+                if (hasRoot) {
+                    runCatching { client.ensureServiceRunning() }
                     true
+                } else {
+                    runCatching { client.health().isSuccess }.getOrDefault(false)
                 }
             }
             rootStatusState.value = if (isRoot) RootStatus.GRANTED else RootStatus.DENIED

@@ -51,6 +51,7 @@ pub fn app_router(s: AppState) -> Router {
             "/api/v1/system/backups/{name}/restore",
             post(backup_restore),
         )
+        .route("/api/v1/system/logs/core", get(logs_core))
         .route("/api/v1/system/logs/clear", post(logs_clear))
         .route("/api/v1/security/pairing/start", post(pair_start))
         .route("/api/v1/security/pairing/complete", post(pair_complete))
@@ -87,6 +88,7 @@ pub fn app_router(s: AppState) -> Router {
         .route("/api/v1/remotes", get(remotes).post(remote_create))
         .route("/api/v1/remotes/providers", get(remote_providers))
         .route("/api/v1/remotes/import", post(remote_import))
+        .route("/api/v1/remotes/test-config", post(remote_test_config))
         .route(
             "/api/v1/remotes/{id}",
             get(remote_get).put(remote_update).delete(remote_delete),

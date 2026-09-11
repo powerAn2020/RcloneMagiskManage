@@ -152,7 +152,7 @@ Under modern Android security paradigms, **"Root access must never imply indiscr
         "CAP_NET_ADMIN"
     ],
     "context": "u:r:ksu:s0",
-    "namespace": "GLOBAL",
+    "namespace": "INHERITED",
     "locales": {
         "zh_CN": {
             "name": "Rclone 根权限管理",
@@ -184,7 +184,7 @@ Under modern Android security paradigms, **"Root access must never imply indiscr
 | **CAP_FOWNER** | Linux Capability | Enables managing and reclaiming temporary config files and unlinked mount descriptors. |
 | **CAP_KILL** | Linux Capability | Grants ability to signal and terminate specific worker PIDs, **preventing catastrophic global `pkill`**. |
 | **CAP_NET_ADMIN** | Linux Capability | Manages network binding interfaces and LAN TLS transport policies. |
-| **Namespace** | `GLOBAL` | **Critical invariant**: Joins system global mount namespace, ensuring FUSE mount points propagate system-wide. |
+| **Namespace** | `INHERITED` | Inherits the caller's namespace; global mounting is handled independently by the daemon (service.sh enters global namespace), keeping the App strictly sandboxed. |
 | **Context** | `u:r:ksu:s0` | Runs within KernelSU's dedicated privileged domain with granular policy boundaries. |
 | **Flags** | `NO_NEW_PRIVS` | Prevents the process and its child processes from gaining additional privileges via setuid binaries. |
 

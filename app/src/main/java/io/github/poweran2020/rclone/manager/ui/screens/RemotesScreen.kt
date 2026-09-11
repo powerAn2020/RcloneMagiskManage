@@ -26,6 +26,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
@@ -39,7 +41,9 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -120,6 +124,7 @@ fun RemotesScreen(
     onNavigateToFileBrowser: (String) -> Unit,
     onShowMessage: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(true) }
     var remotes by remember { mutableStateOf<List<RemoteItem>>(emptyList()) }
@@ -131,6 +136,39 @@ fun RemotesScreen(
     var deleteCandidate by remember { mutableStateOf<Pair<RemoteItem, String>?>(null) } // RemoteItem to confirmationToken
     var mountConflictWarning by remember { mutableStateOf<Pair<RemoteItem, List<MountProfileItem>>?>(null) }
     var isDeletingRemote by remember { mutableStateOf(false) }
+
+    // 1. Hoisted photo picker launcher for QR import to prevent Dialog window crash
+    var pendingImportQrCode by remember { mutableStateOf<String?>(null) }
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val decoded = runCatching { QrCodeUtils.decodeQrFromUri(context, uri) }.getOrNull()
+            if (!decoded.isNullOrBlank()) {
+                pendingImportQrCode = decoded
+                onShowMessage("已成功解析二维码配置！")
+            } else {
+                onShowMessage("未能从图片中解析出二维码")
+            }
+        }
+    }
+
+    // 2. Hoisted document creation launcher for export to prevent Dialog window crash
+    var exportContentToSave by remember { mutableStateOf<String?>(null) }
+    val saveFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        if (uri != null && exportContentToSave != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(exportContentToSave!!.toByteArray())
+                }
+                onShowMessage("已成功保存至文件")
+            } catch (e: Exception) {
+                onShowMessage("保存失败: ${e.message}")
+            }
+        }
+    }
 
     val loadRemotes = {
         scope.launch {
@@ -229,107 +267,121 @@ fun RemotesScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        StatusBadge(status = if (remote.enabled) "ENABLED" else "DISABLED")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            StatusBadge(status = if (remote.enabled) "ENABLED" else "DISABLED")
+                            Switch(
+                                checked = remote.enabled,
+                                onCheckedChange = {
+                                    scope.launch {
+                                        val action = if (remote.enabled) "disable" else "enable"
+                                        client.remoteAction(remote.id, action, bearer).fold(
+                                            onSuccess = {
+                                                onShowMessage("远端已${if (remote.enabled) "禁用" else "启用"}")
+                                                loadRemotes()
+                                            },
+                                            onFailure = { onShowMessage("操作失败: ${it.message}") }
+                                        )
+                                    }
+                                }
+                            )
+                        }
                     }
 
                     Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    onShowMessage("正在测试连接 ${remote.name}…")
-                                    client.testRemote(remote.id, bearer).fold(
-                                        onSuccess = { res ->
-                                            val json = runCatching { JSONObject(res) }.getOrNull()
-                                            if (json?.optBoolean("ok") == true) {
-                                                onShowMessage("测试成功: 远端服务连接正常")
-                                            } else {
-                                                val errMsg = json?.optString("error")?.ifBlank { null } ?: "无法连接到该远端服务"
-                                                onShowMessage("测试失败: $errMsg")
-                                            }
-                                        },
-                                        onFailure = { onShowMessage("测试请求失败: ${it.message}") }
-                                    )
-                                }
-                            }
-                        ) {
-                            Text(stringResource(R.string.remotes_btn_test_short))
-                        }
-
-                        OutlinedButton(onClick = { onNavigateToFileBrowser(remote.id) }) {
-                            Icon(Icons.Default.Folder, contentDescription = null)
-                            Spacer(Modifier.width(2.dp))
-                            Text(stringResource(R.string.remotes_btn_browse_short))
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    val action = if (remote.enabled) "disable" else "enable"
-                                    client.remoteAction(remote.id, action, bearer).fold(
-                                        onSuccess = {
-                                            onShowMessage("远端已${if (remote.enabled) "禁用" else "启用"}")
-                                            loadRemotes()
-                                        },
-                                        onFailure = { onShowMessage("操作失败: ${it.message}") }
-                                    )
-                                }
-                            }
-                        ) {
-                            Text(stringResource(if (remote.enabled) R.string.remotes_btn_disable else R.string.remotes_btn_enable))
-                        }
-
-                        IconButton(onClick = { editingRemote = remote }) {
-                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.action_edit))
-                        }
-
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    client.exportRemote(remote.id, bearer).fold(
-                                        onSuccess = { exportData = parseRemoteExport(it) },
-                                        onFailure = { onShowMessage("导出失败: ${it.message}") }
-                                    )
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = "导出分享")
-                        }
-
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    // 前置检查：是否存在关联的挂载配置
-                                    val mountsRes = client.mounts(bearer)
-                                    val referencedMounts = mountsRes.getOrNull()?.let { parseMounts(it) }?.filter {
-                                        it.remoteId == remote.id || it.remoteName == remote.name
-                                    } ?: emptyList()
-
-                                    if (referencedMounts.isNotEmpty()) {
-                                        mountConflictWarning = remote to referencedMounts
-                                        return@launch
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        onShowMessage("正在测试连接 ${remote.name}…")
+                                        client.testRemote(remote.id, bearer).fold(
+                                            onSuccess = { res ->
+                                                val json = runCatching { JSONObject(res) }.getOrNull()
+                                                if (json?.optBoolean("ok") == true) {
+                                                    onShowMessage("测试成功: 远端服务连接正常")
+                                                } else {
+                                                    val errMsg = json?.optString("error")?.ifBlank { null } ?: "无法连接到该远端服务"
+                                                    onShowMessage("测试失败: $errMsg")
+                                                }
+                                            },
+                                            onFailure = { onShowMessage("测试请求失败: ${it.message}") }
+                                        )
                                     }
-
-                                    client.remoteDelete(remote.id, bearer).fold(
-                                        onSuccess = { preview ->
-                                            val token = JSONObject(preview).optString("confirmationToken")
-                                            if (token.isNotBlank()) {
-                                                deleteCandidate = remote to token
-                                            } else {
-                                                onShowMessage("已删除")
-                                                loadRemotes()
-                                            }
-                                        },
-                                        onFailure = { onShowMessage("删除失败: ${it.message}") }
-                                    )
-                                }
+                                },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(stringResource(R.string.remotes_btn_test_short))
                             }
+
+                            OutlinedButton(
+                                onClick = { onNavigateToFileBrowser(remote.id) },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.remotes_btn_browse_short))
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                            IconButton(onClick = { editingRemote = remote }) {
+                                Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.action_edit))
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        client.exportRemote(remote.id, bearer).fold(
+                                            onSuccess = { exportData = parseRemoteExport(it) },
+                                            onFailure = { onShowMessage("导出失败: ${it.message}") }
+                                        )
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = "导出分享")
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        // 前置检查：是否存在关联的挂载配置
+                                        val mountsRes = client.mounts(bearer)
+                                        val referencedMounts = mountsRes.getOrNull()?.let { parseMounts(it) }?.filter {
+                                            it.remoteId == remote.id || it.remoteName == remote.name
+                                        } ?: emptyList()
+
+                                        if (referencedMounts.isNotEmpty()) {
+                                            mountConflictWarning = remote to referencedMounts
+                                            return@launch
+                                        }
+
+                                        client.remoteDelete(remote.id, bearer).fold(
+                                            onSuccess = { preview ->
+                                                val token = JSONObject(preview).optString("confirmationToken")
+                                                if (token.isNotBlank()) {
+                                                    deleteCandidate = remote to token
+                                                } else {
+                                                    onShowMessage("已删除")
+                                                    loadRemotes()
+                                                }
+                                            },
+                                            onFailure = { onShowMessage("删除失败: ${it.message}") }
+                                        )
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }
@@ -345,16 +397,19 @@ fun RemotesScreen(
             initialEndpoint = "",
             providers = providers,
             isEditing = false,
+            client = client,
+            bearer = bearer,
             onDismiss = { showCreateDialog = false },
-            onSubmit = { name, type, endpoint, secret ->
+            onSubmit = { name, type, endpoint, secret, onSuccess, onError ->
                 scope.launch {
                     client.createRemote(name, type, endpoint.ifBlank { null }, secret, bearer).fold(
                         onSuccess = {
                             onShowMessage("远端添加成功")
                             showCreateDialog = false
+                            onSuccess()
                             loadRemotes()
                         },
-                        onFailure = { onShowMessage("添加失败: ${it.message}") }
+                        onFailure = { onError("添加失败: ${it.message}") }
                     )
                 }
             }
@@ -371,16 +426,19 @@ fun RemotesScreen(
             configuredSecrets = remote.configuredSecrets,
             providers = providers,
             isEditing = true,
+            client = client,
+            bearer = bearer,
             onDismiss = { editingRemote = null },
-            onSubmit = { name, type, endpoint, secret ->
+            onSubmit = { name, type, endpoint, secret, onSuccess, onError ->
                 scope.launch {
                     client.updateRemote(remote.id, name, type, endpoint.ifBlank { null }, bearer, secret).fold(
                         onSuccess = {
                             onShowMessage("远端更新成功")
                             editingRemote = null
+                            onSuccess()
                             loadRemotes()
                         },
-                        onFailure = { onShowMessage("更新失败: ${it.message}") }
+                        onFailure = { onError("更新失败: ${it.message}") }
                     )
                 }
             }
@@ -389,18 +447,26 @@ fun RemotesScreen(
 
     if (showImportDialog) {
         RemoteImportDialog(
+            pendingQrCode = pendingImportQrCode,
+            onClearPendingQrCode = { pendingImportQrCode = null },
+            onPickQrImage = {
+                photoPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
             onDismiss = { showImportDialog = false },
             onShowMessage = onShowMessage,
-            onSubmit = { configText ->
+            onSubmit = { configText, onSuccess, onError ->
                 scope.launch {
                     client.importRemoteConfig(configText, bearer).fold(
                         onSuccess = { res ->
                             val count = runCatching { JSONObject(res).optJSONArray("imported")?.length() ?: 0 }.getOrDefault(0)
                             onShowMessage("成功导入 $count 个远端配置")
                             showImportDialog = false
+                            onSuccess()
                             loadRemotes()
                         },
-                        onFailure = { onShowMessage("导入失败: ${it.message}") }
+                        onFailure = { onError("导入失败: ${it.message}") }
                     )
                 }
             }
@@ -443,6 +509,10 @@ fun RemotesScreen(
     exportData?.let { data ->
         RemoteExportDialog(
             data = data,
+            onSaveToFile = { filename, content ->
+                exportContentToSave = content
+                saveFileLauncher.launch(filename)
+            },
             onDismiss = { exportData = null },
             onShowMessage = onShowMessage
         )
@@ -502,6 +572,13 @@ fun RemotesScreen(
     }
 }
 
+enum class RemoteTestState {
+    UNTESTED,
+    TESTING,
+    SUCCESS,
+    FAILED
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RemoteFormDialog(
@@ -513,9 +590,12 @@ fun RemoteFormDialog(
     configuredSecrets: List<String> = emptyList(),
     providers: List<ProviderItem> = emptyList(),
     isEditing: Boolean = false,
+    client: GatewayClient,
+    bearer: String,
     onDismiss: () -> Unit,
-    onSubmit: (name: String, type: String, endpoint: String, secret: JSONObject?) -> Unit
+    onSubmit: (name: String, type: String, endpoint: String, secret: JSONObject?, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(TextFieldValue(initialName)) }
     var nameError by remember { mutableStateOf<String?>(null) }
     val nameFocusRequester = remember { FocusRequester() }
@@ -550,30 +630,265 @@ fun RemoteFormDialog(
     }
     val passwordVisibility = remember { mutableStateMapOf<String, Boolean>() }
 
+    var testState by remember { mutableStateOf(RemoteTestState.UNTESTED) }
+    var dialogError by remember { mutableStateOf<String?>(null) }
+    var dialogSuccess by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
+
+    fun invalidateTestState() {
+        if (testState != RemoteTestState.UNTESTED) {
+            testState = RemoteTestState.UNTESTED
+            dialogSuccess = null
+        }
+    }
+
+    fun buildSecretObject(): JSONObject? {
+        val secretObj = JSONObject()
+        optionValues.forEach { (k, v) ->
+            val trimmed = v.trim()
+            if (trimmed.isNotBlank() && trimmed != "[]" && trimmed != "{}") {
+                secretObj.put(k, trimmed)
+            }
+        }
+        return if (secretObj.length() > 0) secretObj else null
+    }
+
+    fun getEndpointValue(): String {
+        return optionValues["url"]?.ifBlank { null }
+            ?: optionValues["endpoint"]?.ifBlank { null }
+            ?: ""
+    }
+
+    fun validateInputs(): Boolean {
+        nameError = null
+        optionErrors.clear()
+        dialogError = null
+
+        if (name.text.isBlank()) {
+            nameError = "远端名称不能为空"
+            nameFocusRequester.requestFocus()
+            return false
+        }
+        if (!name.text.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
+            nameError = "远端名称仅允许字母、数字、下划线及连字符"
+            nameFocusRequester.requestFocus()
+            return false
+        }
+
+        if (selectedProvider != null && selectedProvider.options.isNotEmpty()) {
+            val basicOptions = selectedProvider.options.filter { !it.advanced && it.name != "name" && it.name != "type" }
+            val emptyRequired = basicOptions.filter { opt ->
+                opt.required && optionValues[opt.name].isNullOrBlank() && !(isEditing && configuredSecrets.contains(opt.name))
+            }
+            if (emptyRequired.isNotEmpty()) {
+                emptyRequired.forEach { opt ->
+                    optionErrors[opt.name] = "${opt.name} 为必填项"
+                }
+                val first = emptyRequired.first()
+                optionFocusRequesters[first.name]?.requestFocus()
+                return false
+            }
+        } else {
+            val urlVal = optionValues["url"] ?: optionValues["endpoint"] ?: ""
+            if (type.equals("webdav", ignoreCase = true) && urlVal.isBlank()) {
+                optionErrors["url"] = "服务器地址 / URL 为必填项"
+                optionFocusRequesters["url"]?.requestFocus()
+                return false
+            }
+        }
+        return true
+    }
+
+    fun runTest(onTestResult: (Boolean) -> Unit = {}) {
+        if (!validateInputs()) {
+            onTestResult(false)
+            return
+        }
+
+        testState = RemoteTestState.TESTING
+        dialogError = null
+        dialogSuccess = null
+
+        val endpointVal = getEndpointValue()
+        val secret = buildSecretObject()
+
+        scope.launch {
+            client.testRemoteConfig(name.text.trim(), type.trim(), endpointVal.ifBlank { null }, secret, bearer).fold(
+                onSuccess = { res ->
+                    val json = runCatching { JSONObject(res) }.getOrNull()
+                    val ok = json?.optBoolean("ok", false) ?: false
+                    if (ok) {
+                        testState = RemoteTestState.SUCCESS
+                        dialogSuccess = "连接测试成功！远端配置有效且响应正常。"
+                        dialogError = null
+                        onTestResult(true)
+                    } else {
+                        testState = RemoteTestState.FAILED
+                        val errMsg = json?.optString("error")?.ifBlank { null } ?: "连接失败"
+                        dialogError = "测试连接失败: $errMsg"
+                        dialogSuccess = null
+                        onTestResult(false)
+                    }
+                },
+                onFailure = { err ->
+                    testState = RemoteTestState.FAILED
+                    dialogError = "测试请求异常: ${err.message}"
+                    dialogSuccess = null
+                    onTestResult(false)
+                }
+            )
+        }
+    }
+
+    fun handleSave() {
+        if (!validateInputs()) return
+
+        if (!isEditing) {
+            when (testState) {
+                RemoteTestState.SUCCESS -> {
+                    // 已通过测试，继续保存
+                }
+                RemoteTestState.FAILED -> {
+                    dialogError = "连接测试未通过，无法保存！请检查配置并确保测试通过后再添加。"
+                    return
+                }
+                RemoteTestState.TESTING -> {
+                    return
+                }
+                RemoteTestState.UNTESTED -> {
+                    runTest { passed ->
+                        if (passed) {
+                            val endpointVal = getEndpointValue()
+                            val secret = buildSecretObject()
+                            isSubmitting = true
+                            onSubmit(
+                                name.text.trim(),
+                                type.trim(),
+                                endpointVal,
+                                secret,
+                                { isSubmitting = false },
+                                { err -> dialogError = err; isSubmitting = false }
+                            )
+                        }
+                    }
+                    return
+                }
+            }
+        }
+
+        val endpointVal = getEndpointValue()
+        val secret = buildSecretObject()
+        isSubmitting = true
+        onSubmit(
+            name.text.trim(),
+            type.trim(),
+            endpointVal,
+            secret,
+            { isSubmitting = false },
+            { err -> dialogError = err; isSubmitting = false }
+        )
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (testState != RemoteTestState.TESTING && !isSubmitting) {
+                onDismiss()
+            }
+        },
         title = { Text(title, fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 500.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .heightIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (isEditing) {
-                    Text(
-                        text = "提示：留空的密码或 Secret 选项将保留原有的加密值，不会被覆盖。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                if (dialogError != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = dialogError!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { dialogError = null },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "关闭",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
                 }
+
+                if (dialogSuccess != null) {
+                    Surface(
+                        color = Color(0xFFE8F5E9),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF2E7D32),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = dialogSuccess!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF1B5E20),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (isEditing) {
+                        Text(
+                            text = "提示：留空的密码或 Secret 选项将保留原有的加密值，不会被覆盖。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
 
                 OutlinedTextField(
                     value = name,
                     onValueChange = {
                         name = it
                         if (nameError != null) nameError = null
+                        invalidateTestState()
                     },
                     label = { Text("远端名称 (英文标识符，例如 mydav) *") },
                     isError = nameError != null,
@@ -607,6 +922,7 @@ fun RemoteFormDialog(
                             onClick = {
                                 type = pType
                                 optionErrors.clear()
+                                invalidateTestState()
                             },
                             label = {
                                 Text(
@@ -631,6 +947,7 @@ fun RemoteFormDialog(
                             type = it
                             typeExpanded = true
                             optionErrors.clear()
+                            invalidateTestState()
                         },
                         label = { Text("存储类型 (可输入搜索)") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeExpanded) },
@@ -666,6 +983,7 @@ fun RemoteFormDialog(
                                         type = p.name
                                         typeExpanded = false
                                         optionErrors.clear()
+                                        invalidateTestState()
                                     }
                                 )
                             }
@@ -699,6 +1017,7 @@ fun RemoteFormDialog(
                             onValueChange = {
                                 optionValues[opt.name] = it
                                 optionErrors.remove(opt.name)
+                                invalidateTestState()
                             }
                         )
                     }
@@ -731,6 +1050,7 @@ fun RemoteFormDialog(
                                     onValueChange = {
                                         optionValues[opt.name] = it
                                         optionErrors.remove(opt.name)
+                                        invalidateTestState()
                                     }
                                 )
                             }
@@ -748,6 +1068,7 @@ fun RemoteFormDialog(
                             optionValues["url"] = it
                             optionValues["endpoint"] = it
                             optionErrors.remove("url")
+                            invalidateTestState()
                         },
                         label = { Text("服务器地址 / URL (例如 https://dav.example.com) *") },
                         isError = optionErrors["url"] != null,
@@ -768,6 +1089,7 @@ fun RemoteFormDialog(
                         onValueChange = {
                             optionValues["user"] = it
                             optionValues["access_key"] = it
+                            invalidateTestState()
                         },
                         label = { Text("用户名 / Access Key") },
                         singleLine = true,
@@ -779,6 +1101,7 @@ fun RemoteFormDialog(
                         onValueChange = {
                             optionValues["pass"] = it
                             optionValues["secret"] = it
+                            invalidateTestState()
                         },
                         label = { Text("密码 / Secret Key (掩码保护)") },
                         placeholder = if (isPassConfigured) {
@@ -793,77 +1116,54 @@ fun RemoteFormDialog(
                     )
                     OutlinedTextField(
                         value = optionValues["vendor"] ?: "other",
-                        onValueChange = { optionValues["vendor"] = it },
+                        onValueChange = {
+                            optionValues["vendor"] = it
+                            invalidateTestState()
+                        },
                         label = { Text("提供商 (WebDAV 默认填写 other)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
-        },
+        }
+    },
         confirmButton = {
-            Button(
-                onClick = {
-                    nameError = null
-                    optionErrors.clear()
-
-                    if (name.text.isBlank()) {
-                        nameError = "远端名称不能为空"
-                        nameFocusRequester.requestFocus()
-                        return@Button
-                    }
-                    if (!name.text.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
-                        nameError = "远端名称仅允许字母、数字、下划线及连字符"
-                        nameFocusRequester.requestFocus()
-                        return@Button
-                    }
-
-                    if (selectedProvider != null && selectedProvider.options.isNotEmpty()) {
-                        val basicOptions = selectedProvider.options.filter { !it.advanced && it.name != "name" && it.name != "type" }
-                        val emptyRequired = basicOptions.filter { opt ->
-                            opt.required && optionValues[opt.name].isNullOrBlank() && !(isEditing && configuredSecrets.contains(opt.name))
-                        }
-                        if (emptyRequired.isNotEmpty()) {
-                            emptyRequired.forEach { opt ->
-                                optionErrors[opt.name] = "${opt.name} 为必填项"
-                            }
-                            val first = emptyRequired.first()
-                            optionFocusRequesters[first.name]?.requestFocus()
-                            return@Button
-                        }
-                    } else {
-                        val urlVal = optionValues["url"] ?: optionValues["endpoint"] ?: ""
-                        if (type.equals("webdav", ignoreCase = true) && urlVal.isBlank()) {
-                            optionErrors["url"] = "服务器地址 / URL 为必填项"
-                            optionFocusRequesters["url"]?.requestFocus()
-                            return@Button
-                        }
-                    }
-
-                    val secretObj = JSONObject()
-                    optionValues.forEach { (k, v) ->
-                        val trimmed = v.trim()
-                        if (trimmed.isNotBlank() && trimmed != "[]" && trimmed != "{}") {
-                            secretObj.put(k, trimmed)
-                        }
-                    }
-                    val endpointVal = optionValues["url"]?.ifBlank { null }
-                        ?: optionValues["endpoint"]?.ifBlank { null }
-                        ?: ""
-                    val secret = if (secretObj.length() > 0) secretObj else null
-                    onSubmit(
-                        name.text.trim(),
-                        type.trim(),
-                        endpointVal,
-                        secret
-                    )
-                }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("保存")
+                OutlinedButton(
+                    onClick = { runTest() },
+                    enabled = testState != RemoteTestState.TESTING && !isSubmitting
+                ) {
+                    if (testState == RemoteTestState.TESTING) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("测试中…")
+                    } else {
+                        Text(if (testState == RemoteTestState.SUCCESS) "重新测试" else "测试连接")
+                    }
+                }
+                Button(
+                    onClick = { handleSave() },
+                    enabled = testState != RemoteTestState.TESTING && !isSubmitting
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(if (!isEditing && testState != RemoteTestState.SUCCESS) "测试并保存" else "保存")
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(
+                onClick = onDismiss,
+                enabled = testState != RemoteTestState.TESTING && !isSubmitting
+            ) {
+                Text("取消")
+            }
         }
     )
 }
@@ -1015,8 +1315,11 @@ private fun RenderOptionField(
 
 @Composable
 fun RemoteImportDialog(
+    pendingQrCode: String? = null,
+    onClearPendingQrCode: () -> Unit = {},
+    onPickQrImage: () -> Unit,
     onDismiss: () -> Unit,
-    onSubmit: (configText: String) -> Unit,
+    onSubmit: (configText: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit,
     onShowMessage: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -1031,29 +1334,66 @@ pass = mypassword
 """
         )
     }
+    var dialogError by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val decoded = QrCodeUtils.decodeQrFromUri(context, uri)
-            if (!decoded.isNullOrBlank()) {
-                configText = decoded
-                onShowMessage("已成功解析二维码配置！")
-            } else {
-                onShowMessage("未能从图片中解析出二维码")
-            }
+    LaunchedEffect(pendingQrCode) {
+        if (!pendingQrCode.isNullOrBlank()) {
+            configText = pendingQrCode
+            dialogError = null
+            onClearPendingQrCode()
+            onShowMessage("已成功解析二维码配置！")
         }
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = { Text("导入 rclone.conf 配置", fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (dialogError != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = dialogError!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { dialogError = null },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "关闭",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Text(
                     text = "在此粘贴原生 rclone.conf INI 格式配置，或通过相册图片识别配置二维码。系统将自动解析区块并加密敏感凭据入库。",
                     style = MaterialTheme.typography.bodySmall,
@@ -1065,12 +1405,9 @@ pass = mypassword
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        onClick = onPickQrImage,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        enabled = !isSubmitting
                     ) {
                         Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
@@ -1085,13 +1422,15 @@ pass = mypassword
                                 val text = clip.getItemAt(0).text?.toString()
                                 if (!text.isNullOrBlank()) {
                                     configText = text
+                                    dialogError = null
                                     onShowMessage("已从剪贴板粘贴")
                                 } else {
-                                    onShowMessage("剪贴板内容为空")
+                                    dialogError = "剪贴板内容为空"
                                 }
                             }
                         },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        enabled = !isSubmitting
                     ) {
                         Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
@@ -1101,28 +1440,47 @@ pass = mypassword
 
                 OutlinedTextField(
                     value = configText,
-                    onValueChange = { configText = it },
+                    onValueChange = {
+                        configText = it
+                        if (dialogError != null) dialogError = null
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(220.dp),
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    placeholder = { Text("[remote-name]\ntype = ...") }
+                    placeholder = { Text("[remote-name]\ntype = ...") },
+                    enabled = !isSubmitting
                 )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (configText.isNotBlank()) {
-                        onSubmit(configText.trim())
+                    if (configText.isBlank()) {
+                        dialogError = "配置内容不能为空"
+                        return@Button
                     }
-                }
+                    isSubmitting = true
+                    onSubmit(
+                        configText.trim(),
+                        { isSubmitting = false },
+                        { err ->
+                            dialogError = err
+                            isSubmitting = false
+                        }
+                    )
+                },
+                enabled = !isSubmitting
             ) {
+                if (isSubmitting) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text("导入并保存")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss, enabled = !isSubmitting) { Text("取消") }
         }
     )
 }
@@ -1131,6 +1489,7 @@ pass = mypassword
 @Composable
 fun RemoteExportDialog(
     data: RemoteExportData,
+    onSaveToFile: (fileName: String, content: String) -> Unit,
     onDismiss: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
@@ -1143,21 +1502,6 @@ fun RemoteExportDialog(
             0 -> if (isFullMode) data.ini else data.redactedIni
             1 -> if (isFullMode) data.jsonConfig else data.redactedJsonConfig
             else -> if (isFullMode) data.ini else data.redactedIni
-        }
-    }
-
-    val saveFileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/plain")
-    ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                context.contentResolver.openOutputStream(uri)?.use { stream ->
-                    stream.write(currentContent.toByteArray())
-                }
-                onShowMessage("已成功保存至文件")
-            } catch (e: Exception) {
-                onShowMessage("保存失败: ${e.message}")
-            }
         }
     }
 
@@ -1303,7 +1647,7 @@ fun RemoteExportDialog(
                 Button(
                     onClick = {
                         val ext = if (selectedFormat == 1) "json" else "conf"
-                        saveFileLauncher.launch("${data.name}.$ext")
+                        onSaveToFile("${data.name}.$ext", currentContent)
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                 ) {

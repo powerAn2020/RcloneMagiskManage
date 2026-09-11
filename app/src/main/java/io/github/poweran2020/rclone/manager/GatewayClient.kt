@@ -89,6 +89,14 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun testRemote(id: String, token: String): Result<String> =
         request("POST", "/api/v1/remotes/${java.net.URLEncoder.encode(id, "UTF-8")}/test", token)
 
+    suspend fun testRemoteConfig(name: String, type: String, endpoint: String?, secret: JSONObject?, token: String): Result<String> =
+        request("POST", "/api/v1/remotes/test-config", token, JSONObject().apply {
+            put("name", name)
+            put("type", type)
+            if (!endpoint.isNullOrBlank()) put("endpoint", endpoint)
+            if (secret != null && secret.length() > 0) put("secret", secret)
+        })
+
     suspend fun createBackup(token: String): Result<String> = request("POST", "/api/v1/system/backups", token)
     suspend fun restoreBackup(name: String, token: String): Result<String> = request("POST", "/api/v1/system/backups/${encode(name)}/restore", token)
     suspend fun deleteBackup(name: String, token: String): Result<String> = request("DELETE", "/api/v1/system/backups/${encode(name)}", token)
@@ -293,8 +301,54 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         list.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
     }
 
+    enum class RequestChannel {
+        CONTROL,
+        DATA
+    }
+
+    @Volatile
+    private var dataShell: Shell? = null
+
+    private fun getDataShell(): Shell {
+        var s = dataShell
+        if (s == null || !s.isAlive) {
+            synchronized(this) {
+                s = dataShell
+                if (s == null || !s.isAlive) {
+                    s = Shell.Builder.create()
+                        .setFlags(Shell.FLAG_MOUNT_MASTER)
+                        .setTimeout(45)
+                        .build()
+                    dataShell = s
+                }
+            }
+        }
+        return s!!
+    }
+
+    private fun getShellFor(channel: RequestChannel): Shell {
+        return when (channel) {
+            RequestChannel.DATA -> runCatching { getDataShell() }.getOrElse { Shell.getShell() }
+            RequestChannel.CONTROL -> Shell.getShell()
+        }
+    }
+
+    private fun autoChannel(path: String): RequestChannel {
+        return if (path.startsWith("/api/v1/files") || path.contains("/test")) {
+            RequestChannel.DATA
+        } else {
+            RequestChannel.CONTROL
+        }
+    }
+
     private fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
-    private suspend fun request(method: String, path: String, token: String? = null, body: JSONObject? = null): Result<String> = withContext(Dispatchers.IO) {
+    private suspend fun request(
+        method: String,
+        path: String,
+        token: String? = null,
+        body: JSONObject? = null,
+        channel: RequestChannel = autoChannel(path)
+    ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             require(method in setOf("GET", "POST", "PUT", "DELETE"))
             require(path.startsWith("/api/v1/") && !path.contains("..") && !path.any { it == '\u0000' || it == '\r' || it == '\n' })
@@ -304,10 +358,28 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
             if (body != null) args += listOf("--body-base64", Base64.encodeToString(body.toString().toByteArray(), Base64.NO_WRAP))
             val outList = mutableListOf<String>()
             val errList = mutableListOf<String>()
-            val result = Shell.cmd(args.joinToString(" ") { quote(it) }).to(outList, errList).exec()
-            val output = outList.joinToString("\n")
-            val err = errList.joinToString("\n")
-            android.util.Log.i("RcloneGateway", "req: $method $path -> code=${result.code}, out len=${output.length}, err=$err")
+            val targetShell = getShellFor(channel)
+            var result = targetShell.newJob().add(args.joinToString(" ") { quote(it) }).to(outList, errList).exec()
+            var output = outList.joinToString("\n")
+            var err = errList.joinToString("\n")
+            android.util.Log.i("RcloneGateway", "req [$channel]: $method $path -> code=${result.code}, out len=${output.length}, err=$err")
+
+            // 自愈机制：如果网关服务未就绪，且拥有 Root，尝试自愈拉起并重试一次
+            if (!result.isSuccess && (err.contains("Connection refused") || err.contains("os error 111") || err.contains("os error 2"))) {
+                val isRoot = Shell.getCachedShell()?.isRoot == true
+                if (isRoot && path != "/api/v1/system/safe-mode") {
+                    android.util.Log.w("RcloneGateway", "网关连接未就绪 ($path)，尝试自动拉起并重试...")
+                    ensureServiceRunning()
+                    kotlinx.coroutines.delay(1000)
+                    outList.clear()
+                    errList.clear()
+                    result = targetShell.newJob().add(args.joinToString(" ") { quote(it) }).to(outList, errList).exec()
+                    output = outList.joinToString("\n")
+                    err = errList.joinToString("\n")
+                    android.util.Log.i("RcloneGateway", "自愈重试结果 [$channel]: $method $path -> code=${result.code}, out len=${output.length}, err=$err")
+                }
+            }
+
             val errMsg = if (output.isNotBlank()) {
                 val parsed = runCatching {
                     val obj = JSONObject(output)
@@ -486,4 +558,54 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
             Unit
         }
     }
+
+    suspend fun readCoreLogs(maxLines: Int = 500, token: String? = null): Result<String> = withContext(Dispatchers.IO) {
+        // 1. 优先尝试本地 Root Shell 直接读取（离线/守护进程崩溃时仍能排障）
+        val shellRes = runCatching {
+            val logFile = "/data/adb/rclone-manage/logs/gateway.log"
+            val res = Shell.cmd("if [ -f '$logFile' ]; then tail -n $maxLines '$logFile'; else echo '__FILE_NOT_FOUND__'; fi").exec()
+            if (res.isSuccess) {
+                val output = res.out.joinToString("\n")
+                if (output.contains("__FILE_NOT_FOUND__")) {
+                    throw NoSuchFileException(java.io.File(logFile), reason = "核心日志文件尚未生成或不存在")
+                }
+                output
+            } else {
+                throw RuntimeException(res.err.joinToString("\n").ifBlank { "Shell 执行异常 (exitCode=${res.code})" })
+            }
+        }
+
+        if (shellRes.isSuccess) {
+            return@withContext shellRes
+        }
+
+        // 2. 如果 Root 读取失败且拥有 token，尝试通过 Gateway API 读取
+        if (!token.isNullOrBlank()) {
+            val apiRes = request("GET", "/api/v1/system/logs/core?lines=$maxLines", token)
+            if (apiRes.isSuccess) {
+                return@withContext runCatching {
+                    val obj = JSONObject(apiRes.getOrThrow())
+                    obj.optString("content", "")
+                }
+            }
+        }
+
+        shellRes
+    }
+
+    suspend fun clearCoreLogs(token: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val logFile = "/data/adb/rclone-manage/logs/gateway.log"
+            val res = Shell.cmd("if [ -f '$logFile' ]; then : > '$logFile'; fi").exec()
+            if (!res.isSuccess) {
+                if (!token.isNullOrBlank()) {
+                    clearLogs(token).getOrThrow()
+                } else {
+                    throw RuntimeException("清空核心日志失败: ${res.err.joinToString("\n")}")
+                }
+            }
+            Unit
+        }
+    }
 }
+

@@ -11,7 +11,8 @@ use uuid::Uuid;
 
 use crate::db::db;
 use crate::engine::rclone::{
-    TempConfig, clean_error_message, materialize_rclone_config, rclone_command, redact_log_text,
+    TempConfig, clean_error_message, materialize_adhoc_remote_config, materialize_rclone_config,
+    rclone_command, redact_log_text,
 };
 use crate::error::{GatewayError, Result};
 use crate::security::auth::{acl, audit, consume_confirmation, scope};
@@ -765,3 +766,82 @@ pub async fn remote_test(
         "error": err_msg
     })))
 }
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteTestConfigIn {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub remote_type: String,
+    pub endpoint: Option<String>,
+    pub secret: Option<serde_json::Value>,
+}
+
+pub async fn remote_test_config(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<RemoteTestConfigIn>,
+) -> Result<Json<serde_json::Value>> {
+    let c = scope(&h, &s, "remote.read")?;
+    validate_identity(&i.name, "remote name", 128)?;
+    let path = materialize_adhoc_remote_config(
+        &s,
+        &i.name,
+        &i.remote_type,
+        i.endpoint.as_deref(),
+        i.secret.as_ref(),
+    )?;
+    let config = TempConfig(Some(path));
+    let o = rclone_command(&config.0)
+        .args([
+            "lsd",
+            &format!("{}:/", i.name),
+            "--max-depth",
+            "1",
+            "--contimeout",
+            "3s",
+            "--timeout",
+            "5s",
+            "--retries",
+            "1",
+            "--low-level-retries",
+            "1",
+        ])
+        .output()
+        .await;
+    drop(config);
+    let (ok, err_msg) = match o {
+        Ok(ref output) if output.status.success() => (true, None),
+        Ok(ref output) => {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let msg = if err.is_empty() {
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
+            } else {
+                err
+            };
+            let redacted = redact_log_text(&msg);
+            let display = if redacted.trim() == "[REDACTED]" && !msg.is_empty() {
+                clean_error_message(&msg)
+            } else {
+                redacted
+            };
+            (false, Some(display))
+        }
+        Err(ref e) => (false, Some(e.to_string())),
+    };
+    let _ = audit(
+        &s,
+        Some(&c),
+        "remote.test_config",
+        None,
+        Some(&i.name),
+        if ok { "SUCCESS" } else { "FAILED" },
+        (!ok).then_some("RCLONE_TEST_FAILED"),
+    );
+    Ok(Json(serde_json::json!({
+        "ok": ok,
+        "remote": i.name,
+        "error": err_msg
+    })))
+}
+

@@ -135,6 +135,7 @@ use crate::types::*;
             "/api/v1/remotes/123e4567-e89b-12d3-a456-426614174000/disable"
         ));
         assert!(allowed_request("POST", "/api/v1/remotes/import"));
+        assert!(allowed_request("POST", "/api/v1/remotes/test-config"));
         assert!(allowed_request(
             "GET",
             "/api/v1/mounts/123e4567-e89b-12d3-a456-426614174000"
@@ -977,8 +978,46 @@ info line"#,
         let _ = fs::remove_dir_all(&state.root);
     }
 
+    #[test]
+    fn adhoc_remote_config_materialization_and_validation() {
+        let root = std::env::temp_dir().join(format!("rclone-test-adhoc-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+
+        let sec = serde_json::json!({
+            "user": "myuser",
+            "pass": "plain_password"
+        });
+        let path = crate::engine::rclone::materialize_adhoc_remote_config(
+            &state,
+            "mytestwebdav",
+            "webdav",
+            Some("https://dav.example.com"),
+            Some(&sec),
+        )
+        .unwrap();
+
+        assert!(path.exists());
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("[mytestwebdav]"));
+        assert!(content.contains("type = webdav"));
+        assert!(content.contains("url = https://dav.example.com"));
+        assert!(content.contains("user = myuser"));
+        assert!(!content.contains("plain_password"));
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
     #[tokio::test]
     async fn system_logs_clear_clears_files_and_audit() {
+        assert!(allowed_request("GET", "/api/v1/system/logs/core"));
         assert!(allowed_request("POST", "/api/v1/system/logs/clear"));
         let root = std::env::temp_dir().join(format!("rclone-test-clear-{}", Uuid::new_v4()));
         ensure_dirs(&root).unwrap();

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -67,6 +68,7 @@ import io.github.poweran2020.rclone.manager.data.model.parseMigrationStatus
 import io.github.poweran2020.rclone.manager.data.model.parseSystemInfo
 import io.github.poweran2020.rclone.manager.data.model.parseSystemSettings
 import io.github.poweran2020.rclone.manager.ui.component.ContentCard
+import io.github.poweran2020.rclone.manager.ui.component.CoreLogDialog
 import io.github.poweran2020.rclone.manager.ui.component.DangerousConfirmDialog
 import io.github.poweran2020.rclone.manager.ui.component.InfoRow
 import io.github.poweran2020.rclone.manager.ui.component.LoadingView
@@ -102,6 +104,7 @@ fun SettingsScreen(
     var migration by remember { mutableStateOf<MigrationStatusItem?>(null) }
     var auditLogs by remember { mutableStateOf<List<AuditLogItem>>(emptyList()) }
 
+    var showCoreLogDialog by remember { mutableStateOf(false) }
     var showAuditDialog by remember { mutableStateOf(false) }
     var showClearLogsDialog by remember { mutableStateOf(false) }
     var isClearingLogs by remember { mutableStateOf(false) }
@@ -617,53 +620,74 @@ fun SettingsScreen(
 
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "Root 操作与安全审计",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "全链路操作事件已记录，敏感文件名经由 SHA-256 哈希脱敏。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // 1. 核心运行日志
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "核心运行日志 (gateway.log)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "守护进程启动、挂载指令执行、看门狗探针与底层运行时输出。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = { showCoreLogDialog = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("查看核心运行日志")
                         }
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    client.auditLogs(bearer).fold(
-                                        onSuccess = {
-                                            auditLogs = parseAuditLogs(it)
-                                            showAuditDialog = true
-                                        },
-                                        onFailure = { onShowMessage("获取审计日志失败: ${it.message}") }
-                                    )
-                                }
-                            },
-                            modifier = Modifier.weight(1f)
+
+                    androidx.compose.material3.HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    // 2. 安全审计日志与清理
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "Root 操作与安全审计",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "全链路操作事件已记录，敏感文件名经由 SHA-256 哈希脱敏。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("查看日志")
-                        }
-                        Button(
-                            onClick = { showClearLogsDialog = true },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("清理日志")
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        client.auditLogs(bearer).fold(
+                                            onSuccess = {
+                                                auditLogs = parseAuditLogs(it)
+                                                showAuditDialog = true
+                                            },
+                                            onFailure = { onShowMessage("获取审计日志失败: ${it.message}") }
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("查看审计日志")
+                            }
+                            Button(
+                                onClick = { showClearLogsDialog = true },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("清理所有日志")
+                            }
                         }
                     }
                 }
@@ -912,6 +936,16 @@ fun SettingsScreen(
                 legacyPathInput = TextFieldValue(p)
                 showLegacyPathPicker = false
             }
+        )
+    }
+
+    if (showCoreLogDialog) {
+        CoreLogDialog(
+            show = true,
+            client = client,
+            bearer = bearer,
+            onDismiss = { showCoreLogDialog = false },
+            onShowMessage = onShowMessage
         )
     }
 }

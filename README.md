@@ -152,7 +152,7 @@
         "CAP_NET_ADMIN"
     ],
     "context": "u:r:ksu:s0",
-    "namespace": "GLOBAL",
+    "namespace": "INHERITED",
     "locales": {
         "zh_CN": {
             "name": "Rclone 根权限管理",
@@ -184,7 +184,7 @@
 | **CAP_FOWNER** | Linux Capability | 允许管理与清理 rclone worker 产生的临时配置文件及孤立挂载句柄。 |
 | **CAP_KILL** | Linux Capability | 赋予精确发送终止信号的能力，用于停止特定挂载或任务进程，**杜绝暴力全局 `pkill`**。 |
 | **CAP_NET_ADMIN** | Linux Capability | 允许管理本地网络绑定状态与局域网加密传输策略。 |
-| **Namespace** | `GLOBAL` | **关键约束**：加入系统全局主挂载命名空间（Global Mount Namespace），保证 FUSE 挂载点在系统内全局下发传播。 |
+| **Namespace** | `INHERITED` | 继承调用者命名空间；全局挂载职责由后台守护进程（service.sh 自动进入全局空间）独立承担，App 自身恪守沙箱隔离。 |
 | **Context** | `u:r:ksu:s0` | 运行在 KernelSU 官方特权域中，受到细粒度 SELinux 域策略保护。 |
 | **Flags** | `NO_NEW_PRIVS` | 进程与其子进程被禁止通过 setuid 等方式额外提升新权限，强化防提权收敛。 |
 
