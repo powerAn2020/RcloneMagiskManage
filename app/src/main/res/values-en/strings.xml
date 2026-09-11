@@ -99,7 +99,20 @@
     <string name="mount_btn_start">Start Mount</string>
     <string name="mount_btn_stop">Stop Mount</string>
     <string name="mount_delete_title">Delete Mount</string>
-    <string name="mount_delete_message">Are you sure you want to delete this mount profile? This action cannot be undone.</string>
+    <string name="mount_delete_message">Are you sure you want to delete this mount? This action cannot be undone.</string>
+    <string name="mount_warning_disable_readonly_title">Critical Risk: Disabling Read-Only Warning</string>
+    <string name="mount_warning_disable_readonly_msg">App-specific directories are automatically recursively deleted by Android when the target app is uninstalled. If read-only mode is disabled (making it writable), uninstalling the target app may cause ALL YOUR CLOUD FILES to be permanently deleted!\n\nWe strongly advise keeping read-only enabled. Are you sure you want to enable writable mode?</string>
+    <string name="mount_warning_keep_readonly">Keep Read-Only (Recommended)</string>
+    <string name="mount_warning_confirm_writable">Enable Writable Anyway</string>
+    <string name="mount_badge_isolated_writable">Isolated (Writable · Data Loss on Uninstall)</string>
+    <string name="mount_err_point_is_file">Mount point must be a directory path, not a regular file</string>
+    <string name="mount_presets_label">Common Presets:</string>
+    <string name="mount_preset_external_app">External App (Android/data)</string>
+    <string name="mount_preset_internal_rclone">Internal App (rclone)</string>
+    <string name="mount_preset_internal_root">Internal Root (/files)</string>
+    <string name="mount_preset_default_mnt">Default (/mnt)</string>
+    <string name="mount_preset_sdcard">Internal Storage (/sdcard)</string>
+    <string name="mount_preset_storage">Standard Storage (/storage)</string>
 
     <!-- Common & Dialog strings -->
     <string name="action_submit">Submit</string>

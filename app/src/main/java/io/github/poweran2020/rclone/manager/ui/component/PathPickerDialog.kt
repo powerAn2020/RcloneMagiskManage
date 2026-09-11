@@ -82,7 +82,8 @@ fun RclonePathPickerField(
     client: GatewayClient,
     bearer: String,
     modifier: Modifier = Modifier,
-    placeholder: String? = null
+    placeholder: String? = null,
+    directoryOnly: Boolean = false
 ) {
     var showPickerDialog by remember { mutableStateOf(false) }
 
@@ -111,6 +112,7 @@ fun RclonePathPickerField(
             remotes = remotes,
             client = client,
             bearer = bearer,
+            directoryOnly = directoryOnly,
             onDismiss = { showPickerDialog = false },
             onConfirm = { chosen ->
                 onValueChange(TextFieldValue(chosen))
@@ -128,6 +130,7 @@ fun PathPickerDialog(
     remotes: List<RemoteItem>,
     client: GatewayClient,
     bearer: String,
+    directoryOnly: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: (selectedPath: String) -> Unit
 ) {
@@ -201,10 +204,10 @@ fun PathPickerDialog(
     }
 
     // Current resolved path
-    val resolvedPath = remember(mode, selectedRemote, currentRemotePath, selectedRemoteItem, currentLocalDir, selectedLocalItem) {
+    val resolvedPath = remember(mode, selectedRemote, currentRemotePath, selectedRemoteItem, currentLocalDir, selectedLocalItem, directoryOnly) {
         if (mode == 0) {
             val rName = selectedRemote?.name ?: "remote"
-            if (selectedRemoteItem != null) {
+            if (!directoryOnly && selectedRemoteItem != null) {
                 val item = selectedRemoteItem!!
                 val full = if (currentRemotePath == "/") "/${item.name}" else "$currentRemotePath/${item.name}"
                 "$rName:$full"
@@ -212,7 +215,7 @@ fun PathPickerDialog(
                 "$rName:$currentRemotePath"
             }
         } else {
-            if (selectedLocalItem != null) {
+            if (!directoryOnly && selectedLocalItem != null) {
                 selectedLocalItem!!.path
             } else {
                 currentLocalDir
@@ -379,16 +382,18 @@ fun PathPickerDialog(
                             } else {
                                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                                     items(remoteFiles) { item ->
-                                        val isSelected = selectedRemoteItem?.name == item.name
+                                        val isSelected = !directoryOnly && selectedRemoteItem?.name == item.name
+                                        val isFile = !item.isDir
+                                        val clickable = !directoryOnly || !isFile
                                         Surface(
                                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable {
+                                                .clickable(enabled = clickable) {
                                                     if (item.isDir) {
                                                         val next = if (currentRemotePath == "/") "/${item.name}" else "$currentRemotePath/${item.name}"
                                                         selectedRemote?.let { loadRemoteDir(it, next) }
-                                                    } else {
+                                                    } else if (!directoryOnly) {
                                                         selectedRemoteItem = if (isSelected) null else item
                                                     }
                                                 }
@@ -402,7 +407,7 @@ fun PathPickerDialog(
                                                 Icon(
                                                     imageVector = if (item.isDir) Icons.Default.Folder else Icons.Default.FilePresent,
                                                     contentDescription = null,
-                                                    tint = if (item.isDir) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                                                    tint = if (item.isDir) MaterialTheme.colorScheme.primary else if (directoryOnly) MaterialTheme.colorScheme.outline.copy(alpha = 0.5f) else MaterialTheme.colorScheme.secondary,
                                                     modifier = Modifier.size(20.dp)
                                                 )
                                                 Spacer(Modifier.width(8.dp))
@@ -410,12 +415,17 @@ fun PathPickerDialog(
                                                     text = item.name,
                                                     style = MaterialTheme.typography.bodyMedium,
                                                     fontWeight = if (item.isDir) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (directoryOnly && isFile) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface,
                                                     modifier = Modifier.weight(1f),
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                                 if (!item.isDir) {
-                                                    Text(formatBytes(item.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text(
+                                                        text = if (directoryOnly) "" else formatBytes(item.size),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = if (directoryOnly) MaterialTheme.colorScheme.outline.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
                                                 }
                                                 if (isSelected) {
                                                     Spacer(Modifier.width(6.dp))
@@ -513,15 +523,17 @@ fun PathPickerDialog(
                         } else {
                             LazyColumn(modifier = Modifier.fillMaxSize()) {
                                 items(localFiles) { item ->
-                                    val isSelected = selectedLocalItem?.path == item.path
+                                    val isSelected = !directoryOnly && selectedLocalItem?.path == item.path
+                                    val isFile = !item.isDirectory
+                                    val clickable = !directoryOnly || !isFile
                                     Surface(
                                         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clickable {
+                                            .clickable(enabled = clickable) {
                                                 if (item.isDirectory) {
                                                     loadLocalDir(item.path)
-                                                } else {
+                                                } else if (!directoryOnly) {
                                                     selectedLocalItem = if (isSelected) null else item
                                                 }
                                             }
@@ -530,12 +542,12 @@ fun PathPickerDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(horizontal = 10.dp, vertical = 6.dp),
-                                                verticalAlignment = Alignment.CenterVertically
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(
                                                 imageVector = if (item.isDirectory) Icons.Default.Folder else Icons.Default.FilePresent,
                                                 contentDescription = null,
-                                                tint = if (item.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                                                tint = if (item.isDirectory) MaterialTheme.colorScheme.primary else if (directoryOnly) MaterialTheme.colorScheme.outline.copy(alpha = 0.5f) else MaterialTheme.colorScheme.secondary,
                                                 modifier = Modifier.size(20.dp)
                                             )
                                             Spacer(Modifier.width(8.dp))
@@ -543,12 +555,17 @@ fun PathPickerDialog(
                                                 text = item.name,
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = if (item.isDirectory) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (directoryOnly && isFile) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface,
                                                 modifier = Modifier.weight(1f),
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             if (!item.isDirectory) {
-                                                Text(formatBytes(item.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Text(
+                                                    text = if (directoryOnly) "" else formatBytes(item.size),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = if (directoryOnly) MaterialTheme.colorScheme.outline.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
                                             }
                                             if (isSelected) {
                                                 Spacer(Modifier.width(6.dp))

@@ -74,6 +74,10 @@ function Build-ForArch($RustTarget, $Abi, $ZipName) {
         Write-Host "[*] Integrating binaries from scratch cache..." -ForegroundColor Cyan
         Copy-Item "$Root/scratch/unpacked_magisk_rclone/system/vendor/bin/rclone" "$OutDir/bin/rclone"
         Copy-Item "$Root/scratch/unpacked_magisk_rclone/system/vendor/bin/fusermount3" "$OutDir/bin/fusermount3"
+    } elseif ((Test-Path "$Root/scratch/unpacked_magisk_arm64/system/vendor/bin/rclone") -and ($Abi -in @("arm64-v8a", "arm64"))) {
+        Write-Host "[*] Integrating arm64 binaries from scratch cache..." -ForegroundColor Cyan
+        Copy-Item "$Root/scratch/unpacked_magisk_arm64/system/vendor/bin/rclone" "$OutDir/bin/rclone"
+        Copy-Item "$Root/scratch/unpacked_magisk_arm64/system/vendor/bin/fusermount3" "$OutDir/bin/fusermount3"
     } else {
         Write-Warning "Prebuilt binaries not found for $Abi in $PrebuiltDir or $SubmoduleBinDir"
     }

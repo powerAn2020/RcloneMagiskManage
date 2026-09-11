@@ -77,9 +77,9 @@
 
     <!-- Mounts Screen -->
     <string name="mounts_title">挂载管理</string>
-    <string name="mounts_btn_create">新建挂载 Profile</string>
-    <string name="mount_edit_title_create">创建挂载 Profile</string>
-    <string name="mount_edit_title_edit">编辑挂载 Profile</string>
+    <string name="mounts_btn_create">新建挂载</string>
+    <string name="mount_edit_title_create">创建挂载</string>
+    <string name="mount_edit_title_edit">编辑挂载</string>
     <string name="mount_field_name">Profile 名称 (英文标识符)</string>
     <string name="mount_mode_label">挂载模式</string>
     <string name="mount_mode_global">全局挂载</string>
@@ -99,7 +99,20 @@
     <string name="mount_btn_start">启动挂载</string>
     <string name="mount_btn_stop">停止挂载</string>
     <string name="mount_delete_title">删除挂载</string>
-    <string name="mount_delete_message">确定要删除此挂载 Profile 吗？删除后配置无法撤销。</string>
+    <string name="mount_delete_message">确定要删除此挂载吗？删除后配置无法撤销。</string>
+    <string name="mount_warning_disable_readonly_title">高危风险：关闭只读警告</string>
+    <string name="mount_warning_disable_readonly_msg">应用专属目录在目标 App 卸载时会被 Android 系统自动递归清理。若关闭只读开启可写模式，一旦目标 App 被卸载，将可能导致【云端网盘数据被一并永久删除】！\n\n强烈建议保持只读挂载。确定仍要开启可写模式吗？</string>
+    <string name="mount_warning_keep_readonly">保持只读 (推荐)</string>
+    <string name="mount_warning_confirm_writable">依然开启可写</string>
+    <string name="mount_badge_isolated_writable">专属 (可写·卸载有删盘风险)</string>
+    <string name="mount_err_point_is_file">挂载点必须是目录路径，不能是常规文件</string>
+    <string name="mount_presets_label">常用挂载点预设:</string>
+    <string name="mount_preset_external_app">外部专属 (Android/data)</string>
+    <string name="mount_preset_internal_rclone">内部私有 (rclone)</string>
+    <string name="mount_preset_internal_root">内部根目录 (/files)</string>
+    <string name="mount_preset_default_mnt">默认 (/mnt)</string>
+    <string name="mount_preset_sdcard">内部存储 (/sdcard)</string>
+    <string name="mount_preset_storage">标准存储 (/storage)</string>
 
     <!-- Common & Dialog strings -->
     <string name="action_submit">提交</string>

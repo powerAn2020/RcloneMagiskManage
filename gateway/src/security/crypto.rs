@@ -301,6 +301,12 @@ pub fn is_valid_app_private_mount(p: &str) -> bool {
         sub
     } else if let Some(sub) = p.strip_prefix("/data/user/0/") {
         sub
+    } else if let Some(sub) = p.strip_prefix("/storage/emulated/0/Android/data/") {
+        sub
+    } else if let Some(sub) = p.strip_prefix("/sdcard/Android/data/") {
+        sub
+    } else if let Some(sub) = p.strip_prefix("/data/media/0/Android/data/") {
+        sub
     } else {
         return false;
     };
@@ -326,6 +332,11 @@ pub fn valid_mount(p: &str) -> Result<()> {
             "PATH_DENIED: mount point is not allowed".into(),
         ));
     }
+    if std::path::Path::new(p).is_file() {
+        return Err(GatewayError::Message(
+            "MOUNT_TARGET_IS_FILE: mount point must be a directory, not a regular file".into(),
+        ));
+    }
     let valid_root = if let Some(name) = p.strip_prefix("/mnt/rclone-") {
         !name.is_empty()
             && name
@@ -346,7 +357,7 @@ pub fn valid_mount(p: &str) -> Result<()> {
     };
     if !valid_root && !is_valid_app_private_mount(p) {
         return Err(GatewayError::Message(
-            "PATH_DENIED: mount destination must reside under /mnt/rclone-*, /mnt/*, /sdcard/*, /storage/*, /data/media/0/*, or /data/data/<pkg>/files/*"
+            "PATH_DENIED: mount destination must reside under /mnt/rclone-*, /mnt/*, /sdcard/*, /storage/*, /data/media/0/*, /data/data/<pkg>/files/*, or Android/data/<pkg>/files/*"
                 .into(),
         ));
     }

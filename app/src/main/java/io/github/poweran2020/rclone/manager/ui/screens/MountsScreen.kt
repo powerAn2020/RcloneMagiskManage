@@ -2,6 +2,8 @@ package io.github.poweran2020.rclone.manager.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -93,7 +95,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MountsScreen(
     padding: PaddingValues,
@@ -189,16 +191,31 @@ fun MountsScreen(
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(mount.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 if (mount.isolated || mount.targetPackage != null) {
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = "应用隔离",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
+                                    if (!mount.readOnly) {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.errorContainer,
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = stringResource(R.string.mount_badge_isolated_writable),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "应用专属 (只读安全)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -415,7 +432,7 @@ fun MountsScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MountEditDialog(
     title: String,
@@ -437,7 +454,9 @@ fun MountEditDialog(
     var cacheMode by remember { mutableStateOf(initialMount?.cacheMode ?: "full") }
     var cacheMaxSize by remember { mutableStateOf(TextFieldValue(initialMount?.cacheMaxSize ?: "32G")) }
     var cacheMaxAge by remember { mutableStateOf(TextFieldValue(initialMount?.cacheMaxAge ?: "36h")) }
-    var readOnly by remember { mutableStateOf(initialMount?.readOnly ?: false) }
+    var readOnly by remember { mutableStateOf(initialMount?.readOnly ?: (initialMount == null || isIsolated)) }
+    var showReadOnlyWarningDialog by remember { mutableStateOf(false) }
+    var formErrorMsg by remember { mutableStateOf<String?>(null) }
 
     var remoteDropdownExpanded by remember { mutableStateOf(false) }
     var modeDropdownExpanded by remember { mutableStateOf(false) }
@@ -464,7 +483,7 @@ fun MountEditDialog(
                             val trimmed = it.text.trim()
                             if (isIsolated) {
                                 val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
-                                mountPoint = TextFieldValue(if (trimmed.isNotBlank()) "/data/data/$pkg/files/rclone/$trimmed" else "")
+                                mountPoint = TextFieldValue(if (trimmed.isNotBlank()) "/storage/emulated/0/Android/data/$pkg/files/rclone/$trimmed" else "")
                             } else {
                                 mountPoint = TextFieldValue(if (trimmed.isNotBlank()) "/mnt/rclone-$trimmed" else "")
                             }
@@ -483,7 +502,7 @@ fun MountEditDialog(
                         selected = !isIsolated,
                         onClick = {
                             isIsolated = false
-                            if (mountPoint.text.startsWith("/data/data/") || mountPoint.text.startsWith("/data/user/0/")) {
+                            if (mountPoint.text.startsWith("/data/data/") || mountPoint.text.startsWith("/data/user/0/") || mountPoint.text.contains("/Android/data/")) {
                                 val trimmed = name.text.trim().ifBlank { "mount" }
                                 mountPoint = TextFieldValue("/mnt/rclone-$trimmed")
                             }
@@ -509,10 +528,11 @@ fun MountEditDialog(
                         selected = isIsolated,
                         onClick = {
                             isIsolated = true
+                            readOnly = true // 专属挂载默认强制只读，防止卸载连带删除
                             val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
                             val trimmed = name.text.trim().ifBlank { "mount" }
                             if (mountPoint.text.isBlank() || mountPoint.text.startsWith("/mnt/rclone-") || mountPoint.text.startsWith("/sdcard/") || mountPoint.text.startsWith("/storage/")) {
-                                mountPoint = TextFieldValue("/data/data/$pkg/files/rclone/$trimmed")
+                                mountPoint = TextFieldValue("/storage/emulated/0/Android/data/$pkg/files/rclone/$trimmed")
                             }
                         },
                         label = {
@@ -552,7 +572,7 @@ fun MountEditDialog(
                                     targetPackage = it
                                     val pkg = it.text.trim().ifBlank { "com.example.app" }
                                     val trimmed = name.text.trim().ifBlank { "mount" }
-                                    mountPoint = TextFieldValue("/data/data/$pkg/files/rclone/$trimmed")
+                                    mountPoint = TextFieldValue("/storage/emulated/0/Android/data/$pkg/files/rclone/$trimmed")
                                 },
                                 label = { Text(stringResource(R.string.mount_target_package_label)) },
                                 modifier = Modifier.fillMaxWidth(),
@@ -639,51 +659,66 @@ fun MountEditDialog(
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
                 )
 
-                Text("常用挂载点预设:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(
+                Text(
+                    text = stringResource(R.string.mount_presets_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val trimmedName = name.text.trim().ifBlank { "name" }
                     val presets = if (isIsolated) {
                         val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
                         listOf(
-                            "/data/data/$pkg/files/rclone/$trimmedName" to "files/rclone",
-                            "/data/data/$pkg/files/$trimmedName" to "files (根)",
-                            "/data/data/$pkg/cache/rclone/$trimmedName" to "cache/rclone"
+                            "/storage/emulated/0/Android/data/$pkg/files/rclone/$trimmedName" to stringResource(R.string.mount_preset_external_app),
+                            "/data/data/$pkg/files/rclone/$trimmedName" to stringResource(R.string.mount_preset_internal_rclone),
+                            "/data/data/$pkg/files/$trimmedName" to stringResource(R.string.mount_preset_internal_root)
                         )
                     } else {
                         listOf(
-                            "/mnt/rclone-$trimmedName" to "默认 (/mnt)",
-                            "/sdcard/$trimmedName" to "内部存储",
-                            "/storage/emulated/0/$trimmedName" to "标准存储"
+                            "/mnt/rclone-$trimmedName" to stringResource(R.string.mount_preset_default_mnt),
+                            "/sdcard/$trimmedName" to stringResource(R.string.mount_preset_sdcard),
+                            "/storage/emulated/0/$trimmedName" to stringResource(R.string.mount_preset_storage)
                         )
                     }
                     presets.forEach { (path, label) ->
-                        OutlinedButton(
+                        val isSelected = mountPoint.text.trim() == path
+                        FilterChip(
+                            selected = isSelected,
                             onClick = {
                                 mountPoint = TextFieldValue(path)
                                 isCustomMountPoint = true
                             },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(32.dp)
-                        ) {
-                            Text(label, style = MaterialTheme.typography.bodySmall)
-                        }
+                            label = {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        )
                     }
                 }
 
                 val currentMountPoint = mountPoint.text.trim().ifBlank {
                     if (isIsolated) {
                         val pkg = targetPackage.text.trim().ifBlank { "<package>" }
-                        "/data/data/$pkg/files/rclone/${name.text.trim().ifBlank { "mount" }}"
+                        "/storage/emulated/0/Android/data/$pkg/files/rclone/${name.text.trim().ifBlank { "mount" }}"
                     } else {
                         if (name.text.isNotBlank()) "/mnt/rclone-${name.text.trim()}" else ""
                     }
                 }
                 if (isIsolated) {
                     Text(
-                        "提示: 专属隔离挂载仅对目标应用沙盒可见，不会向系统公共存储 (/data/media/0/*) 广播。",
+                        if (currentMountPoint.contains("/Android/data/")) {
+                            "提示: 外部专属挂载点兼容播放器/模拟器等仅扫外部存储的应用，系统自动注入 .nomedia 抑制后台媒体库扫描。"
+                        } else {
+                            "提示: 专属隔离挂载仅对目标应用沙盒可见，不会向系统公共存储 (/data/media/0/*) 广播。"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.tertiary
                     )
@@ -743,8 +778,30 @@ fun MountEditDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("只读挂载 (Read-Only)")
-                    Switch(checked = readOnly, onCheckedChange = { readOnly = it })
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.mount_read_only))
+                        if (isIsolated) {
+                            Text(
+                                if (readOnly) "只读安全保护中：防止目标应用被卸载时云端数据被误删" else "【高危】读写模式：目标 App 卸载时云端数据可能一并被删",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (readOnly) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = readOnly,
+                        onCheckedChange = { targetState ->
+                            if (!targetState && isIsolated) {
+                                showReadOnlyWarningDialog = true
+                            } else {
+                                readOnly = targetState
+                            }
+                        }
+                    )
+                }
+
+                formErrorMsg?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
@@ -756,11 +813,18 @@ fun MountEditDialog(
                     val mp = mountPoint.text.trim().ifBlank {
                         if (isIsolated) {
                             val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
-                            "/data/data/$pkg/files/rclone/$n"
+                            "/storage/emulated/0/Android/data/$pkg/files/rclone/$n"
                         } else {
                             "/mnt/rclone-$n"
                         }
                     }
+                    val fileExtensions = listOf(".txt", ".pdf", ".zip", ".apk", ".mp4", ".mkv", ".mp3", ".jpg", ".png", ".tar", ".gz", ".json", ".xml", ".iso")
+                    val lower = mp.lowercase()
+                    if (fileExtensions.any { lower.endsWith(it) }) {
+                        formErrorMsg = "挂载点必须是目录路径，不能是常规文件 ($mp)"
+                        return@Button
+                    }
+                    formErrorMsg = null
                     val tp = if (isIsolated) targetPackage.text.trim().ifBlank { null } else null
                     onSubmit(
                         n,
@@ -784,13 +848,52 @@ fun MountEditDialog(
         }
     )
 
+    if (showReadOnlyWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showReadOnlyWarningDialog = false },
+            title = {
+                Text(
+                    stringResource(R.string.mount_warning_disable_readonly_title),
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(stringResource(R.string.mount_warning_disable_readonly_msg))
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        readOnly = false
+                        showReadOnlyWarningDialog = false
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(stringResource(R.string.mount_warning_confirm_writable))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        readOnly = true
+                        showReadOnlyWarningDialog = false
+                    }
+                ) {
+                    Text(stringResource(R.string.mount_warning_keep_readonly))
+                }
+            }
+        )
+    }
+
     if (showAppPicker) {
         AppPickerDialog(
             onDismiss = { showAppPicker = false },
             onSelect = { pkg ->
                 targetPackage = TextFieldValue(pkg)
                 val trimmed = name.text.trim().ifBlank { "mount" }
-                mountPoint = TextFieldValue("/data/data/$pkg/files/rclone/$trimmed")
+                mountPoint = TextFieldValue("/storage/emulated/0/Android/data/$pkg/files/rclone/$trimmed")
                 isCustomMountPoint = true
                 showAppPicker = false
             }
@@ -807,6 +910,7 @@ fun MountEditDialog(
             remotes = remotes,
             client = client,
             bearer = bearer,
+            directoryOnly = true,
             onDismiss = { showRemotePathPicker = false },
             onConfirm = { chosen ->
                 val sub = if (chosen.contains(":")) chosen.substringAfter(":") else chosen
@@ -824,6 +928,7 @@ fun MountEditDialog(
             remotes = remotes,
             client = client,
             bearer = bearer,
+            directoryOnly = true,
             onDismiss = { showLocalMountPicker = false },
             onConfirm = { chosen ->
                 val localP = if (chosen.contains(":")) chosen.substringAfter(":") else chosen

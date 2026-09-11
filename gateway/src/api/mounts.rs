@@ -73,7 +73,8 @@ pub async fn mount_create(
     let is_isolated = i.isolated.unwrap_or(false)
         || i.target_package.is_some()
         || i.mount_point.starts_with("/data/data/")
-        || i.mount_point.starts_with("/data/user/0/");
+        || i.mount_point.starts_with("/data/user/0/")
+        || i.mount_point.contains("/Android/data/");
     let conflict: Option<String> = db(&s)?.query_row(
         "SELECT id FROM mount_profile WHERE mount_point=? AND status IN ('STARTING','RUNNING','STOPPING')",
         params![i.mount_point],
@@ -199,7 +200,8 @@ pub async fn mount_action(
         let is_isolated = m.isolated
             || m.target_package.is_some()
             || m.mount_point.starts_with("/data/data/")
-            || m.mount_point.starts_with("/data/user/0/");
+            || m.mount_point.starts_with("/data/user/0/")
+            || m.mount_point.contains("/Android/data/");
         let pkg = m
             .target_package
             .clone()
@@ -253,9 +255,15 @@ pub async fn mount_action(
             command.arg("--allow-other");
             if let Some((uid, gid)) = uid_gid {
                 command.arg("--uid").arg(uid.to_string());
-                command.arg("--gid").arg(gid.to_string());
-                command.arg("--dir-perms").arg("0700");
-                command.arg("--file-perms").arg("0600");
+                if m.mount_point.contains("/Android/data/") {
+                    command.arg("--gid").arg("9997");
+                    command.arg("--dir-perms").arg("0770");
+                    command.arg("--file-perms").arg("0660");
+                } else {
+                    command.arg("--gid").arg(gid.to_string());
+                    command.arg("--dir-perms").arg("0700");
+                    command.arg("--file-perms").arg("0600");
+                }
             }
         }
         let child = match command.spawn() {
@@ -297,7 +305,8 @@ pub async fn mount_action(
         let is_isolated = m.isolated
             || m.target_package.is_some()
             || m.mount_point.starts_with("/data/data/")
-            || m.mount_point.starts_with("/data/user/0/");
+            || m.mount_point.starts_with("/data/user/0/")
+            || m.mount_point.contains("/Android/data/");
         let _ = process_kill_command()
             .args(["-TERM", &pid.to_string()])
             .status();
@@ -314,7 +323,8 @@ pub async fn mount_action(
         let is_isolated = m.isolated
             || m.target_package.is_some()
             || m.mount_point.starts_with("/data/data/")
-            || m.mount_point.starts_with("/data/user/0/");
+            || m.mount_point.starts_with("/data/user/0/")
+            || m.mount_point.contains("/Android/data/");
         let conn = db(&s)?;
         conn.execute(
             "UPDATE mount_profile SET status='STOPPED',pid=NULL,updated_at=? WHERE id=?",
@@ -462,7 +472,8 @@ pub async fn mount_update(
     let is_isolated = i.isolated.unwrap_or(m.isolated)
         || i.target_package.is_some()
         || i.mount_point.starts_with("/data/data/")
-        || i.mount_point.starts_with("/data/user/0/");
+        || i.mount_point.starts_with("/data/user/0/")
+        || i.mount_point.contains("/Android/data/");
     let target_package = i.target_package.or(m.target_package);
 
     let t = now();

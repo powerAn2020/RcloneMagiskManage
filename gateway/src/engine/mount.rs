@@ -79,7 +79,10 @@ pub fn derived_bind_target(source: &str) -> Option<String> {
 pub fn extract_package_from_path(p: &str) -> Option<String> {
     let sub = p
         .strip_prefix("/data/data/")
-        .or_else(|| p.strip_prefix("/data/user/0/"))?;
+        .or_else(|| p.strip_prefix("/data/user/0/"))
+        .or_else(|| p.strip_prefix("/storage/emulated/0/Android/data/"))
+        .or_else(|| p.strip_prefix("/sdcard/Android/data/"))
+        .or_else(|| p.strip_prefix("/data/media/0/Android/data/"))?;
     let (pkg, _) = sub.split_once('/')?;
     if crate::security::crypto::is_valid_package_name(pkg) {
         Some(pkg.to_string())
@@ -106,10 +109,22 @@ pub fn resolve_package_uid_gid(pkg: &str) -> Option<(u32, u32)> {
 #[allow(unused_variables)]
 pub fn ensure_mount_directory(mount_point: &str, uid_gid: Option<(u32, u32)>) -> std::io::Result<()> {
     fs::create_dir_all(mount_point)?;
+    if mount_point.contains("/Android/data/") {
+        let nomedia = FsPath::new(mount_point).join(".nomedia");
+        if !nomedia.exists() {
+            let _ = fs::File::create(&nomedia);
+            #[cfg(unix)]
+            if let Some((uid, _)) = uid_gid {
+                use std::os::unix::fs::chown;
+                let _ = chown(&nomedia, Some(uid), Some(9997));
+            }
+        }
+    }
     #[cfg(unix)]
     if let Some((uid, gid)) = uid_gid {
         use std::os::unix::fs::chown;
         let mut p = FsPath::new(mount_point);
+        let target_gid = if mount_point.contains("/Android/data/") { 9997 } else { gid };
         while let Some(parent) = p.parent() {
             if p.ends_with("files")
                 || p.ends_with("cache")
@@ -118,10 +133,10 @@ pub fn ensure_mount_directory(mount_point: &str, uid_gid: Option<(u32, u32)>) ->
             {
                 break;
             }
-            let _ = chown(p, Some(uid), Some(gid));
+            let _ = chown(p, Some(uid), Some(target_gid));
             p = parent;
         }
-        let _ = chown(mount_point, Some(uid), Some(gid));
+        let _ = chown(mount_point, Some(uid), Some(target_gid));
     }
     Ok(())
 }
@@ -339,7 +354,8 @@ pub async fn recover_mount(state: AppState, id: String) {
     let is_isolated = isolated
         || target_package.is_some()
         || mount_point.starts_with("/data/data/")
-        || mount_point.starts_with("/data/user/0/");
+        || mount_point.starts_with("/data/user/0/")
+        || mount_point.contains("/Android/data/");
     let pkg = target_package.clone().or_else(|| extract_package_from_path(&mount_point));
     let uid_gid = pkg.as_deref().and_then(resolve_package_uid_gid);
     let _ = ensure_mount_directory(&mount_point, uid_gid);
@@ -373,9 +389,15 @@ pub async fn recover_mount(state: AppState, id: String) {
         command.arg("--allow-other");
         if let Some((uid, gid)) = uid_gid {
             command.arg("--uid").arg(uid.to_string());
-            command.arg("--gid").arg(gid.to_string());
-            command.arg("--dir-perms").arg("0700");
-            command.arg("--file-perms").arg("0600");
+            if mount_point.contains("/Android/data/") {
+                command.arg("--gid").arg("9997");
+                command.arg("--dir-perms").arg("0770");
+                command.arg("--file-perms").arg("0660");
+            } else {
+                command.arg("--gid").arg(gid.to_string());
+                command.arg("--dir-perms").arg("0700");
+                command.arg("--file-perms").arg("0600");
+            }
         }
     }
     let child = command.spawn();
