@@ -106,7 +106,14 @@
     <string name="mount_warning_confirm_writable">Enable Writable Anyway</string>
     <string name="mount_badge_isolated_writable">Isolated (Writable · Data Loss on Uninstall)</string>
     <string name="mount_err_point_is_file">Mount point must be a directory path, not a regular file</string>
-    <string name="mount_presets_label">Common Presets:</string>
+    <string name="mount_err_name_empty">Profile name cannot be empty</string>
+    <string name="mount_err_name_invalid">Profile name may only contain letters, numbers, underscores, and hyphens</string>
+    <string name="mount_err_remote_empty">Please select an associated remote</string>
+    <string name="mount_err_remotes_none">No remotes configured. Please create a remote first</string>
+    <string name="mount_err_package_empty">Target package name is required for isolated mounts</string>
+    <string name="mount_err_package_invalid">Invalid package name format (e.g. com.example.app)</string>
+    <string name="mount_err_point_empty">Mount point cannot be empty</string>
+    <string name="mount_presets_label">Common Presets</string>
     <string name="mount_preset_external_app">External App (Android/data)</string>
     <string name="mount_preset_internal_rclone">Internal App (rclone)</string>
     <string name="mount_preset_internal_root">Internal Root (/files)</string>

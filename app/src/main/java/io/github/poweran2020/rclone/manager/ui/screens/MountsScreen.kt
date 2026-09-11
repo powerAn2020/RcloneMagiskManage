@@ -2,8 +2,6 @@ package io.github.poweran2020.rclone.manager.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,12 +13,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -95,7 +96,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MountsScreen(
     padding: PaddingValues,
@@ -432,7 +433,7 @@ fun MountsScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MountEditDialog(
     title: String,
@@ -443,13 +444,18 @@ fun MountEditDialog(
     onDismiss: () -> Unit,
     onSubmit: (name: String, remoteId: String, remotePath: String, mountPoint: String, readOnly: Boolean, mode: String, size: String, age: String, targetPackage: String?, isolated: Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(TextFieldValue(initialMount?.name ?: "")) }
+    var nameError by remember { mutableStateOf<String?>(null) }
     var selectedRemoteId by remember { mutableStateOf(initialMount?.remoteId ?: (remotes.firstOrNull()?.id ?: "")) }
+    var remoteError by remember { mutableStateOf<String?>(null) }
     var remotePath by remember { mutableStateOf(TextFieldValue(initialMount?.remotePath ?: "/")) }
     var mountPoint by remember { mutableStateOf(TextFieldValue(initialMount?.mountPoint ?: "")) }
+    var mountPointError by remember { mutableStateOf<String?>(null) }
     var isCustomMountPoint by remember { mutableStateOf(initialMount != null) }
     var isIsolated by remember { mutableStateOf(initialMount?.isolated ?: (initialMount?.targetPackage != null)) }
     var targetPackage by remember { mutableStateOf(TextFieldValue(initialMount?.targetPackage ?: "")) }
+    var packageError by remember { mutableStateOf<String?>(null) }
     var showAppPicker by remember { mutableStateOf(false) }
     var cacheMode by remember { mutableStateOf(initialMount?.cacheMode ?: "full") }
     var cacheMaxSize by remember { mutableStateOf(TextFieldValue(initialMount?.cacheMaxSize ?: "32G")) }
@@ -475,10 +481,37 @@ fun MountEditDialog(
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                MaterialTextField(
+                if (formErrorMsg != null) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ErrorOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Text(
+                                text = formErrorMsg!!,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
                     value = name,
                     onValueChange = {
                         name = it
+                        nameError = null
+                        formErrorMsg = null
                         if (!isCustomMountPoint && initialMount == null) {
                             val trimmed = it.text.trim()
                             if (isIsolated) {
@@ -489,7 +522,18 @@ fun MountEditDialog(
                             }
                         }
                     },
-                    label = stringResource(R.string.mount_field_name)
+                    label = { Text(stringResource(R.string.mount_field_name) + " *") },
+                    isError = nameError != null,
+                    supportingText = {
+                        if (nameError != null) {
+                            Text(nameError!!, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text("用于挂载管理的唯一英文标识符")
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
                 )
 
                 // Visibility & Isolation Mode Selector
@@ -570,18 +614,27 @@ fun MountEditDialog(
                                 value = targetPackage,
                                 onValueChange = {
                                     targetPackage = it
+                                    packageError = null
+                                    formErrorMsg = null
                                     val pkg = it.text.trim().ifBlank { "com.example.app" }
                                     val trimmed = name.text.trim().ifBlank { "mount" }
                                     mountPoint = TextFieldValue("/storage/emulated/0/Android/data/$pkg/files/rclone/$trimmed")
                                 },
-                                label = { Text(stringResource(R.string.mount_target_package_label)) },
+                                label = { Text(stringResource(R.string.mount_target_package_label) + " *") },
+                                isError = packageError != null,
+                                supportingText = {
+                                    if (packageError != null) {
+                                        Text(packageError!!, color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 trailingIcon = {
                                     IconButton(onClick = { showAppPicker = true }) {
                                         Icon(Icons.Default.Apps, contentDescription = stringResource(R.string.mount_select_app_tooltip), tint = MaterialTheme.colorScheme.primary)
                                     }
                                 },
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                shape = RoundedCornerShape(12.dp)
                             )
                         }
                     }
@@ -593,16 +646,24 @@ fun MountEditDialog(
                     onExpandedChange = { remoteDropdownExpanded = !remoteDropdownExpanded },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.name ?: stringResource(R.string.mount_associated_remote)
+                    val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.let { "${it.name} (${it.type})" }
+                        ?: if (remotes.isEmpty()) stringResource(R.string.mount_err_remotes_none) else stringResource(R.string.mount_err_remote_empty)
                     OutlinedTextField(
                         value = currentRemoteName,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text(stringResource(R.string.mount_associated_remote)) },
+                        label = { Text(stringResource(R.string.mount_associated_remote) + " *") },
+                        isError = remoteError != null,
+                        supportingText = {
+                            if (remoteError != null) {
+                                Text(remoteError!!, color = MaterialTheme.colorScheme.error)
+                            }
+                        },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = remoteDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .menuAnchor(),
+                        shape = RoundedCornerShape(12.dp)
                     )
                     ExposedDropdownMenu(
                         expanded = remoteDropdownExpanded,
@@ -613,6 +674,8 @@ fun MountEditDialog(
                                 text = { Text("${r.name} (${r.type})") },
                                 onClick = {
                                     selectedRemoteId = r.id
+                                    remoteError = null
+                                    formErrorMsg = null
                                     remoteDropdownExpanded = false
                                 }
                             )
@@ -643,9 +706,17 @@ fun MountEditDialog(
                     value = mountPoint,
                     onValueChange = {
                         mountPoint = it
+                        mountPointError = null
+                        formErrorMsg = null
                         isCustomMountPoint = true
                     },
-                    label = { Text("挂载点路径") },
+                    label = { Text("挂载点路径 *") },
+                    isError = mountPointError != null,
+                    supportingText = {
+                        if (mountPointError != null) {
+                            Text(mountPointError!!, color = MaterialTheme.colorScheme.error)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {
                         IconButton(onClick = { showLocalMountPicker = true }) {
@@ -656,18 +727,20 @@ fun MountEditDialog(
                             )
                         }
                     },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    shape = RoundedCornerShape(12.dp)
                 )
 
                 Text(
                     text = stringResource(R.string.mount_presets_label),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val trimmedName = name.text.trim().ifBlank { "name" }
                     val presets = if (isIsolated) {
@@ -691,11 +764,13 @@ fun MountEditDialog(
                             onClick = {
                                 mountPoint = TextFieldValue(path)
                                 isCustomMountPoint = true
+                                mountPointError = null
+                                formErrorMsg = null
                             },
                             label = {
                                 Text(
                                     text = label,
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelSmall,
                                     maxLines = 1,
                                     softWrap = false
                                 )
@@ -808,8 +883,48 @@ fun MountEditDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    nameError = null
+                    remoteError = null
+                    packageError = null
+                    mountPointError = null
+                    formErrorMsg = null
+
                     val n = name.text.trim()
-                    if (n.isBlank() || selectedRemoteId.isBlank()) return@Button
+                    if (n.isBlank()) {
+                        nameError = context.getString(R.string.mount_err_name_empty)
+                        formErrorMsg = context.getString(R.string.mount_err_name_empty)
+                        return@Button
+                    }
+                    if (!n.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
+                        nameError = context.getString(R.string.mount_err_name_invalid)
+                        formErrorMsg = context.getString(R.string.mount_err_name_invalid)
+                        return@Button
+                    }
+
+                    if (selectedRemoteId.isBlank()) {
+                        remoteError = if (remotes.isEmpty()) {
+                            context.getString(R.string.mount_err_remotes_none)
+                        } else {
+                            context.getString(R.string.mount_err_remote_empty)
+                        }
+                        formErrorMsg = remoteError
+                        return@Button
+                    }
+
+                    if (isIsolated) {
+                        val pkg = targetPackage.text.trim()
+                        if (pkg.isBlank()) {
+                            packageError = context.getString(R.string.mount_err_package_empty)
+                            formErrorMsg = context.getString(R.string.mount_err_package_empty)
+                            return@Button
+                        }
+                        if (!pkg.contains(".") || pkg.split('.').any { it.isEmpty() || !it.first().isLetter() }) {
+                            packageError = context.getString(R.string.mount_err_package_invalid)
+                            formErrorMsg = context.getString(R.string.mount_err_package_invalid)
+                            return@Button
+                        }
+                    }
+
                     val mp = mountPoint.text.trim().ifBlank {
                         if (isIsolated) {
                             val pkg = targetPackage.text.trim().ifBlank { "com.example.app" }
@@ -818,13 +933,21 @@ fun MountEditDialog(
                             "/mnt/rclone-$n"
                         }
                     }
+                    if (mp.isBlank()) {
+                        mountPointError = context.getString(R.string.mount_err_point_empty)
+                        formErrorMsg = context.getString(R.string.mount_err_point_empty)
+                        return@Button
+                    }
+
                     val fileExtensions = listOf(".txt", ".pdf", ".zip", ".apk", ".mp4", ".mkv", ".mp3", ".jpg", ".png", ".tar", ".gz", ".json", ".xml", ".iso")
                     val lower = mp.lowercase()
                     if (fileExtensions.any { lower.endsWith(it) }) {
-                        formErrorMsg = "挂载点必须是目录路径，不能是常规文件 ($mp)"
+                        val err = context.getString(R.string.mount_err_point_is_file) + " ($mp)"
+                        mountPointError = err
+                        formErrorMsg = err
                         return@Button
                     }
-                    formErrorMsg = null
+
                     val tp = if (isIsolated) targetPackage.text.trim().ifBlank { null } else null
                     onSubmit(
                         n,
@@ -840,7 +963,7 @@ fun MountEditDialog(
                     )
                 }
             ) {
-                Text("保存")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
@@ -892,6 +1015,8 @@ fun MountEditDialog(
             onDismiss = { showAppPicker = false },
             onSelect = { pkg ->
                 targetPackage = TextFieldValue(pkg)
+                packageError = null
+                formErrorMsg = null
                 val trimmed = name.text.trim().ifBlank { "mount" }
                 mountPoint = TextFieldValue("/storage/emulated/0/Android/data/$pkg/files/rclone/$trimmed")
                 isCustomMountPoint = true
@@ -933,6 +1058,8 @@ fun MountEditDialog(
             onConfirm = { chosen ->
                 val localP = if (chosen.contains(":")) chosen.substringAfter(":") else chosen
                 mountPoint = TextFieldValue(localP)
+                mountPointError = null
+                formErrorMsg = null
                 isCustomMountPoint = true
                 showLocalMountPicker = false
             }

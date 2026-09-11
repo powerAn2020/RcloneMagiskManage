@@ -106,7 +106,14 @@
     <string name="mount_warning_confirm_writable">依然开启可写</string>
     <string name="mount_badge_isolated_writable">专属 (可写·卸载有删盘风险)</string>
     <string name="mount_err_point_is_file">挂载点必须是目录路径，不能是常规文件</string>
-    <string name="mount_presets_label">常用挂载点预设:</string>
+    <string name="mount_err_name_empty">Profile 名称不能为空</string>
+    <string name="mount_err_name_invalid">Profile 名称仅允许英文字母、数字、下划线及连字符</string>
+    <string name="mount_err_remote_empty">请选择关联远端</string>
+    <string name="mount_err_remotes_none">尚未配置远端，请先前往「远端」页面新建远端</string>
+    <string name="mount_err_package_empty">应用专属模式下必须指定目标应用包名</string>
+    <string name="mount_err_package_invalid">包名格式不正确 (例如 com.example.app)</string>
+    <string name="mount_err_point_empty">挂载点路径不能为空</string>
+    <string name="mount_presets_label">常用挂载点预设</string>
     <string name="mount_preset_external_app">外部专属 (Android/data)</string>
     <string name="mount_preset_internal_rclone">内部私有 (rclone)</string>
     <string name="mount_preset_internal_root">内部根目录 (/files)</string>
