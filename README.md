@@ -135,24 +135,41 @@
 
 ```json
 {
-    "version": 1,
-    "package": "io.github.poweran2020.rclone.manager",
+    "id": "rclone.root",
     "name": "Rclone Root Manager",
-    "root": {
-        "enabled": true,
-        "uid": 0,
-        "gid": 0,
-        "groups": [ 0, 2000, 1015, 1028, 3003 ],
-        "capabilities": [
-            "CAP_DAC_OVERRIDE",
-            "CAP_DAC_READ_SEARCH",
-            "CAP_FOWNER",
-            "CAP_KILL",
-            "CAP_NET_ADMIN"
-        ],
-        "namespace": "inherited",
-        "selinux": "u:r:ksu:s0"
-    }
+    "author": "poweran2020",
+    "description": "Only essential permissions to let Rclone Root Manager control gateway daemon, manage FUSE mounts and file synchronization.",
+    "uid": 0,
+    "gid": 0,
+    "groups": [
+        "ROOT"
+    ],
+    "capabilities": [
+        "CAP_DAC_OVERRIDE",
+        "CAP_DAC_READ_SEARCH",
+        "CAP_FOWNER",
+        "CAP_KILL",
+        "CAP_NET_ADMIN"
+    ],
+    "context": "u:r:ksu:s0",
+    "namespace": "GLOBAL",
+    "locales": {
+        "zh_CN": {
+            "name": "Rclone 根权限管理",
+            "description": "仅允许 Rclone 管理器控制网关守护进程、管理 FUSE 挂载及文件同步的必要权限"
+        },
+        "zh_TW": {
+            "name": "Rclone 根權限管理",
+            "description": "僅允許 Rclone 管理器控制閘道守護程序、管理 FUSE 掛載及檔案同步的必要權限"
+        },
+        "en": {
+            "name": "Rclone Root Manager",
+            "description": "Only essential permissions to let Rclone Root Manager control gateway daemon, manage FUSE mounts and file synchronization."
+        }
+    },
+    "flags": [
+        "NO_NEW_PRIVS"
+    ]
 }
 ```
 
@@ -161,16 +178,15 @@
 | 配置项 | 取值 | 最小特权设计目的 |
 |:---|:---|:---|
 | **Identity** | `uid: 0`, `gid: 0` | 满足与底层 Unix Domain Socket (`0600`) 及内核 FUSE 设备节点交互的所有者要求。 |
-| **Group 2000** | `shell` | 允许与 Android 本地 Shell IPC 进行必要调试与状态探测通信。 |
-| **Group 1015 & 1028** | `sdcard_rw`, `sdcard_r` | 允许读写外部共享存储 `/sdcard` 与 `/data/media/0`，确保挂载点能向大众应用正常共享。 |
-| **Group 3003** | `inet` | 赋予打开网络套接字的权限，满足云存储数据传输与局域网配对通信需求。 |
+| **Groups** | `ROOT` | 赋予特权运维与底层通信必要的基本用户组身份。 |
 | **CAP_DAC_OVERRIDE** | Linux Capability | 允许特权进程绕过 DAC 权限检查，安全读写专有安全根目录 `/data/adb/rclone-manage`。 |
 | **CAP_DAC_READ_SEARCH** | Linux Capability | 允许遍历系统目录与存储节点，用于文件选择器与路径沙箱规范化校验。 |
 | **CAP_FOWNER** | Linux Capability | 允许管理与清理 rclone worker 产生的临时配置文件及孤立挂载句柄。 |
 | **CAP_KILL** | Linux Capability | 赋予精确发送终止信号的能力，用于停止特定挂载或任务进程，**杜绝暴力全局 `pkill`**。 |
 | **CAP_NET_ADMIN** | Linux Capability | 允许管理本地网络绑定状态与局域网加密传输策略。 |
-| **Namespace** | `inherited` | **关键约束**：继承主挂载命名空间（Mount Namespace），保证 FUSE 挂载点在系统内全局可见。 |
-| **SELinux** | `u:r:ksu:s0` | 运行在 KernelSU 官方特权域中，受到细粒度 SELinux 域策略保护。 |
+| **Namespace** | `GLOBAL` | **关键约束**：加入系统全局主挂载命名空间（Global Mount Namespace），保证 FUSE 挂载点在系统内全局下发传播。 |
+| **Context** | `u:r:ksu:s0` | 运行在 KernelSU 官方特权域中，受到细粒度 SELinux 域策略保护。 |
+| **Flags** | `NO_NEW_PRIVS` | 进程与其子进程被禁止通过 setuid 等方式额外提升新权限，强化防提权收敛。 |
 
 > **安全效益**：通过该 Profile，App 仅获得了执行挂载、网络与文件操作必须的 5 项 Linux Capability，其余危险特权（如底层硬件直接访问、系统时钟更改、内核模块加载等）全部被内核物理剥离。
 

@@ -135,24 +135,41 @@ Under modern Android security paradigms, **"Root access must never imply indiscr
 
 ```json
 {
-    "version": 1,
-    "package": "io.github.poweran2020.rclone.manager",
+    "id": "rclone.root",
     "name": "Rclone Root Manager",
-    "root": {
-        "enabled": true,
-        "uid": 0,
-        "gid": 0,
-        "groups": [ 0, 2000, 1015, 1028, 3003 ],
-        "capabilities": [
-            "CAP_DAC_OVERRIDE",
-            "CAP_DAC_READ_SEARCH",
-            "CAP_FOWNER",
-            "CAP_KILL",
-            "CAP_NET_ADMIN"
-        ],
-        "namespace": "inherited",
-        "selinux": "u:r:ksu:s0"
-    }
+    "author": "poweran2020",
+    "description": "Only essential permissions to let Rclone Root Manager control gateway daemon, manage FUSE mounts and file synchronization.",
+    "uid": 0,
+    "gid": 0,
+    "groups": [
+        "ROOT"
+    ],
+    "capabilities": [
+        "CAP_DAC_OVERRIDE",
+        "CAP_DAC_READ_SEARCH",
+        "CAP_FOWNER",
+        "CAP_KILL",
+        "CAP_NET_ADMIN"
+    ],
+    "context": "u:r:ksu:s0",
+    "namespace": "GLOBAL",
+    "locales": {
+        "zh_CN": {
+            "name": "Rclone 根权限管理",
+            "description": "仅允许 Rclone 管理器控制网关守护进程、管理 FUSE 挂载及文件同步的必要权限"
+        },
+        "zh_TW": {
+            "name": "Rclone 根權限管理",
+            "description": "僅允許 Rclone 管理器控制閘道守護程序、管理 FUSE 掛載及檔案同步的必要權限"
+        },
+        "en": {
+            "name": "Rclone Root Manager",
+            "description": "Only essential permissions to let Rclone Root Manager control gateway daemon, manage FUSE mounts and file synchronization."
+        }
+    },
+    "flags": [
+        "NO_NEW_PRIVS"
+    ]
 }
 ```
 
@@ -161,16 +178,15 @@ Under modern Android security paradigms, **"Root access must never imply indiscr
 | Configuration Item | Value | Least-Privilege Security Rationale |
 |:---|:---|:---|
 | **Identity** | `uid: 0`, `gid: 0` | Grants ownership access required to interface with Unix Domain Socket (`0600`) and FUSE nodes. |
-| **Group 2000** | `shell` | Allows necessary local shell IPC probing and debugging telemetry. |
-| **Group 1015 & 1028** | `sdcard_rw`, `sdcard_r` | Grants read/write permissions to shared storage `/sdcard` & `/data/media/0` for bind mount visibility. |
-| **Group 3003** | `inet` | Grants socket creation capabilities for cloud sync and LAN pairing authentication. |
+| **Groups** | `ROOT` | Provides essential root group identification for privileged daemon management and socket IPC. |
 | **CAP_DAC_OVERRIDE** | Linux Capability | Bypasses standard file DAC checks to read/write the dedicated `/data/adb/rclone-manage` directory. |
 | **CAP_DAC_READ_SEARCH** | Linux Capability | Allows traversing system directories for file pickers and path canonicalization. |
 | **CAP_FOWNER** | Linux Capability | Enables managing and reclaiming temporary config files and unlinked mount descriptors. |
 | **CAP_KILL** | Linux Capability | Grants ability to signal and terminate specific worker PIDs, **preventing catastrophic global `pkill`**. |
 | **CAP_NET_ADMIN** | Linux Capability | Manages network binding interfaces and LAN TLS transport policies. |
-| **Namespace** | `inherited` | **Critical invariant**: Inherits root mount namespace, ensuring FUSE mount points propagate system-wide. |
-| **SELinux** | `u:r:ksu:s0` | Runs within KernelSU's dedicated privileged domain with granular policy boundaries. |
+| **Namespace** | `GLOBAL` | **Critical invariant**: Joins system global mount namespace, ensuring FUSE mount points propagate system-wide. |
+| **Context** | `u:r:ksu:s0` | Runs within KernelSU's dedicated privileged domain with granular policy boundaries. |
+| **Flags** | `NO_NEW_PRIVS` | Prevents the process and its child processes from gaining additional privileges via setuid binaries. |
 
 > **Security Advantage**: Through this profile, the App is granted strictly 5 necessary Linux capabilities. All other dangerous capabilities (e.g., raw hardware I/O, system clock modifications, kernel module loading) are stripped by the kernel.
 

@@ -1,5 +1,15 @@
 #!/system/bin/sh
 umask 077
+
+# Ensure script runs inside Global Init Mount Namespace (PID 1)
+if [ -f /proc/1/ns/mnt ] && [ -x /system/bin/nsenter ]; then
+  CUR_NS=$(readlink /proc/self/ns/mnt 2>/dev/null || true)
+  INIT_NS=$(readlink /proc/1/ns/mnt 2>/dev/null || true)
+  if [ -n "$CUR_NS" ] && [ -n "$INIT_NS" ] && [ "$CUR_NS" != "$INIT_NS" ]; then
+    exec /system/bin/nsenter -t 1 -m -- /system/bin/sh "$0" "$@"
+  fi
+fi
+
 MODDIR=${0%/*}
 export PATH="$MODDIR/bin:$PATH"
 ROOT=/data/adb/rclone-manage

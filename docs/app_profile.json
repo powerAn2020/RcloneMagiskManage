@@ -1,29 +1,37 @@
 {
-    "version": 1,
-    "package": "io.github.poweran2020.rclone.manager",
+    "id": "rclone.root",
     "name": "Rclone Root Manager",
-    "root": {
-        "enabled": true,
-        "uid": 0,
-        "gid": 0,
-        "groups": [
-            0,
-            2000,
-            1015,
-            1028,
-            3003
-        ],
-        "capabilities": [
-            "CAP_DAC_OVERRIDE",
-            "CAP_DAC_READ_SEARCH",
-            "CAP_FOWNER",
-            "CAP_KILL",
-            "CAP_NET_ADMIN"
-        ],
-        "namespace": "inherited",
-        "selinux": "u:r:ksu:s0"
+    "author": "poweran2020",
+    "description": "Only essential permissions to let Rclone Root Manager control gateway daemon, manage FUSE mounts and file synchronization.",
+    "uid": 0,
+    "gid": 0,
+    "groups": [
+        "ROOT"
+    ],
+    "capabilities": [
+        "CAP_DAC_OVERRIDE",
+        "CAP_DAC_READ_SEARCH",
+        "CAP_FOWNER",
+        "CAP_KILL",
+        "CAP_NET_ADMIN"
+    ],
+    "context": "u:r:ksu:s0",
+    "namespace": "INHERITED",
+    "locales": {
+        "zh_CN": {
+            "name": "Rclone 根权限管理",
+            "description": "仅允许 Rclone 管理器控制网关守护进程、管理 FUSE 挂载及文件同步的必要权限"
+        },
+        "zh_TW": {
+            "name": "Rclone 根權限管理",
+            "description": "僅允許 Rclone 管理器控制閘道守護程序、管理 FUSE 掛載及檔案同步的必要權限"
+        },
+        "en": {
+            "name": "Rclone Root Manager",
+            "description": "Only essential permissions to let Rclone Root Manager control gateway daemon, manage FUSE mounts and file synchronization."
+        }
     },
-    "non_root": {
-        "use_custom_profile": false
-    }
+    "flags": [
+        "NO_NEW_PRIVS"
+    ]
 }

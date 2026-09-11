@@ -91,6 +91,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        Shell.setDefaultBuilder(
+            Shell.Builder.create()
+                .setFlags(Shell.FLAG_MOUNT_MASTER)
+                .setTimeout(10)
+        )
         appPreferences = AppPreferences(this)
         themeModeState.value = appPreferences.getThemeMode()
         appLanguageState.value = appPreferences.getAppLanguage()

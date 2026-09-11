@@ -25,7 +25,7 @@ object GatewayErrorParser {
 
             // 2. Magisk 模块或核心可执行程序缺失
             lower.contains("inaccessible or not found") ||
-            (lower.contains("no such file or directory") && (lower.contains("rclone-gateway") || lower.contains("service.sh") || lower.contains("modules/rclone-manager"))) -> {
+            (lower.contains("no such file or directory") && (lower.contains("rclone-gateway: not found") || lower.contains("/bin/rclone-gateway") || lower.contains("service.sh") || lower.contains("modules/rclone-manager"))) -> {
                 FriendlyGatewayError(
                     title = "未检测到 Magisk 模块核心组件",
                     suggestion = "系统未找到 /data/adb/modules/rclone-manager 组件。请确认已在 Magisk / KernelSU 中正确刷入并启用了 rclone-manager 模块。",

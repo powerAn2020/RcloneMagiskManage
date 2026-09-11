@@ -189,7 +189,7 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
 
     suspend fun startGatewayService(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val start = Shell.cmd("sh /data/adb/modules/rclone-manager/service.sh").exec()
+            val start = Shell.cmd("nsenter -t 1 -m -- sh /data/adb/modules/rclone-manager/service.sh 2>/dev/null || sh /data/adb/modules/rclone-manager/service.sh").exec()
             check(start.isSuccess) { start.err.joinToString("\n").ifBlank { "启动 Gateway 服务失败" } }
             "已启动 Gateway 守护进程"
         }
@@ -214,7 +214,7 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         runCatching {
             stopGatewayService()
             kotlinx.coroutines.delay(600)
-            val start = Shell.cmd("sh /data/adb/modules/rclone-manager/service.sh").exec()
+            val start = Shell.cmd("nsenter -t 1 -m -- sh /data/adb/modules/rclone-manager/service.sh 2>/dev/null || sh /data/adb/modules/rclone-manager/service.sh").exec()
             check(start.isSuccess) { start.err.joinToString("\n").ifBlank { "重启 Gateway 服务失败" } }
             "已重启 Gateway 服务"
         }
@@ -224,7 +224,7 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         runCatching {
             val check = Shell.cmd("ps -A | grep rclone-gateway").exec()
             if (!check.isSuccess || check.out.isEmpty()) {
-                val start = Shell.cmd("sh /data/adb/modules/rclone-manager/service.sh").exec()
+                val start = Shell.cmd("nsenter -t 1 -m -- sh /data/adb/modules/rclone-manager/service.sh 2>/dev/null || sh /data/adb/modules/rclone-manager/service.sh").exec()
                 check(start.isSuccess) { start.err.joinToString("\n").ifBlank { "启动 Gateway 服务失败" } }
                 "已成功拉起 Gateway 守护进程"
             } else {
