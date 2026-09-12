@@ -197,6 +197,7 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
 
     suspend fun startGatewayService(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
+            Shell.cmd("rm -f /data/adb/rclone-manage/runtime/manual-stop").exec()
             val start = Shell.cmd("nsenter -t 1 -m -- sh /data/adb/modules/rclone-manager/service.sh 2>/dev/null || sh /data/adb/modules/rclone-manager/service.sh").exec()
             check(start.isSuccess) { start.err.joinToString("\n").ifBlank { "启动 Gateway 服务失败" } }
             "已启动 Gateway 守护进程"
@@ -206,13 +207,14 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun stopGatewayService(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val cmd = listOf(
+                "touch /data/adb/rclone-manage/runtime/manual-stop",
                 "/data/adb/modules/rclone-manager/bin/rclone-gateway stop --root /data/adb/rclone-manage 2>/dev/null || true",
-                "kill $(cat /data/adb/rclone-manage/runtime/gateway-watchdog.pid 2>/dev/null) 2>/dev/null || true",
+                "kill -9 $(cat /data/adb/rclone-manage/runtime/gateway-watchdog.pid 2>/dev/null) 2>/dev/null || true",
                 "kill -9 $(cat /data/adb/rclone-manage/runtime/gateway.pid 2>/dev/null) 2>/dev/null || true",
                 "pkill -9 -f 'rclone-gateway serve' 2>/dev/null || true",
                 "rm -f /data/adb/rclone-manage/runtime/gateway.sock /data/adb/rclone-manage/runtime/gateway.pid /data/adb/rclone-manage/runtime/gateway-watchdog.pid"
             ).joinToString("; ")
-            val res = Shell.cmd(cmd).exec()
+            val res = Shell.cmd("nsenter -t 1 -m -- sh -c ${quote(cmd)} 2>/dev/null || sh -c ${quote(cmd)}").exec()
             check(res.isSuccess) { res.err.joinToString("\n").ifBlank { "停止 Gateway 服务失败" } }
             "已停止 Gateway 服务"
         }
@@ -222,14 +224,17 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
         runCatching {
             stopGatewayService()
             kotlinx.coroutines.delay(600)
-            val start = Shell.cmd("nsenter -t 1 -m -- sh /data/adb/modules/rclone-manager/service.sh 2>/dev/null || sh /data/adb/modules/rclone-manager/service.sh").exec()
-            check(start.isSuccess) { start.err.joinToString("\n").ifBlank { "重启 Gateway 服务失败" } }
+            startGatewayService().getOrThrow()
             "已重启 Gateway 服务"
         }
     }
 
     suspend fun ensureServiceRunning(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
+            val manualStopped = Shell.cmd("[ -f /data/adb/rclone-manage/runtime/manual-stop ]").exec().isSuccess
+            if (manualStopped) {
+                return@runCatching "Gateway 服务已由用户手动停止"
+            }
             val check = Shell.cmd("ps -A | grep rclone-gateway").exec()
             if (!check.isSuccess || check.out.isEmpty()) {
                 val start = Shell.cmd("nsenter -t 1 -m -- sh /data/adb/modules/rclone-manager/service.sh 2>/dev/null || sh /data/adb/modules/rclone-manager/service.sh").exec()
@@ -365,18 +370,23 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
             android.util.Log.i("RcloneGateway", "req [$channel]: $method $path -> code=${result.code}, out len=${output.length}, err=$err")
 
             // 自愈机制：如果网关服务未就绪，且拥有 Root，尝试自愈拉起并重试一次
-            if (!result.isSuccess && (err.contains("Connection refused") || err.contains("os error 111") || err.contains("os error 2"))) {
+            // 排除健康探测接口与安全模式查询，防止停止核心后因探测请求反向唤醒
+            val isProbePath = path == "/api/v1/system/health" || path == "/api/v1/system/safe-mode"
+            if (!isProbePath && !result.isSuccess && (err.contains("Connection refused") || err.contains("os error 111") || err.contains("os error 2"))) {
                 val isRoot = Shell.getCachedShell()?.isRoot == true
-                if (isRoot && path != "/api/v1/system/safe-mode") {
-                    android.util.Log.w("RcloneGateway", "网关连接未就绪 ($path)，尝试自动拉起并重试...")
-                    ensureServiceRunning()
-                    kotlinx.coroutines.delay(1000)
-                    outList.clear()
-                    errList.clear()
-                    result = targetShell.newJob().add(args.joinToString(" ") { quote(it) }).to(outList, errList).exec()
-                    output = outList.joinToString("\n")
-                    err = errList.joinToString("\n")
-                    android.util.Log.i("RcloneGateway", "自愈重试结果 [$channel]: $method $path -> code=${result.code}, out len=${output.length}, err=$err")
+                if (isRoot) {
+                    val manualStopped = Shell.cmd("[ -f /data/adb/rclone-manage/runtime/manual-stop ]").exec().isSuccess
+                    if (!manualStopped) {
+                        android.util.Log.w("RcloneGateway", "网关连接未就绪 ($path)，尝试自动拉起并重试...")
+                        ensureServiceRunning()
+                        kotlinx.coroutines.delay(1000)
+                        outList.clear()
+                        errList.clear()
+                        result = targetShell.newJob().add(args.joinToString(" ") { quote(it) }).to(outList, errList).exec()
+                        output = outList.joinToString("\n")
+                        err = errList.joinToString("\n")
+                        android.util.Log.i("RcloneGateway", "自愈重试结果 [$channel]: $method $path -> code=${result.code}, out len=${output.length}, err=$err")
+                    }
                 }
             }
 

@@ -94,10 +94,13 @@ if [ -x "$MODDIR/bin/rclone-gateway" ]; then
   # only; it never kills unrelated rclone workers or uses global pkill.
   if [ -f "$ROOT/runtime/gateway-watchdog.pid" ]; then
     WATCHDOG_OLD=$(cat "$ROOT/runtime/gateway-watchdog.pid" 2>/dev/null || true)
-    case "$WATCHDOG_OLD" in ''|*[!0-9]*) ;; *) kill "$WATCHDOG_OLD" 2>/dev/null || true ;; esac
+    case "$WATCHDOG_OLD" in ''|*[!0-9]*) ;; *) kill -9 "$WATCHDOG_OLD" 2>/dev/null || true ;; esac
   fi
   (
     while sleep 30; do
+      if [ -f "$ROOT/runtime/manual-stop" ]; then
+        continue
+      fi
       PID=$(cat "$ROOT/runtime/gateway.pid" 2>/dev/null || true)
       case "$PID" in
         ''|*[!0-9]*)

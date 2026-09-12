@@ -321,7 +321,7 @@
 
     <!-- Crypt Screen -->
     <string name="crypt_title">Crypt Encryption</string>
-    <string name="crypt_list_title">rclone Crypt Profiles (%1$d)</string>
+    <string name="crypt_list_title">Crypt Profiles (%1$d)</string>
     <string name="crypt_btn_new">New Crypt</string>
     <string name="crypt_btn_create">Create Crypt Profile</string>
     <string name="crypt_info_title">End-to-End Transparent Encryption</string>
@@ -339,7 +339,7 @@
     <string name="crypt_profile_name_label">Crypt Profile Name</string>
     <string name="crypt_select_remote_placeholder">Select underlying remote</string>
     <string name="crypt_base_path_label">Remote Base Path (Default /)</string>
-    <string name="crypt_password_label">Encryption Password (Optional, masked)</string>
+    <string name="crypt_password_label">Encryption Password (masked)</string>
     <string name="crypt_pass_label">Master Password</string>
     <string name="crypt_salt_label">Salt Password</string>
 

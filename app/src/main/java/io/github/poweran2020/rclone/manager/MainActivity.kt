@@ -144,11 +144,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         checkRootPermission(forceRefresh = rootStatusState.value == RootStatus.DENIED)
-        if (rootStatusState.value == RootStatus.GRANTED) {
-            activityScope.launch(Dispatchers.IO) {
-                runCatching { client.ensureServiceRunning() }
-            }
-        }
     }
 
     private fun checkRootPermission(forceRefresh: Boolean = false, initial: Boolean = false) {
@@ -164,7 +159,9 @@ class MainActivity : ComponentActivity() {
                     Shell.getShell().isRoot
                 }.getOrDefault(false)
                 if (hasRoot) {
-                    runCatching { client.ensureServiceRunning() }
+                    if (initial) {
+                        runCatching { client.ensureServiceRunning() }
+                    }
                     true
                 } else {
                     runCatching { client.health().isSuccess }.getOrDefault(false)

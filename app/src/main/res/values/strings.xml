@@ -321,7 +321,7 @@
 
     <!-- Crypt Screen -->
     <string name="crypt_title">端到端加密 (Crypt)</string>
-    <string name="crypt_list_title">rclone Crypt 加密档案 (%1$d)</string>
+    <string name="crypt_list_title">Crypt 加密档案 (%1$d)</string>
     <string name="crypt_btn_new">新建加密</string>
     <string name="crypt_btn_create">创建 Crypt Profile</string>
     <string name="crypt_info_title">端到端透明加密</string>
@@ -339,7 +339,7 @@
     <string name="crypt_profile_name_label">Crypt Profile 名称</string>
     <string name="crypt_select_remote_placeholder">请选择底层远端</string>
     <string name="crypt_base_path_label">远端基础路径 (默认 /)</string>
-    <string name="crypt_password_label">加密密码 (可选，掩码保护)</string>
+    <string name="crypt_password_label">加密密码 (掩码保护)</string>
     <string name="crypt_pass_label">主加密密码</string>
     <string name="crypt_salt_label">盐值密码 (Salt Password)</string>
 
