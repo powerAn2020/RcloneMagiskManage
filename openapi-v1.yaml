@@ -66,6 +66,26 @@ paths:
     post:
       tags: [system]
       responses: {'201': {description: Database backup created}}
+  /api/v1/system/backups/{name}:
+    delete:
+      tags: [system]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Backup deleted}}
+  /api/v1/system/backups/{name}/restore:
+    post:
+      tags: [system]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Database restored}}
+  /api/v1/system/logs/core:
+    get:
+      tags: [system]
+      parameters:
+        - {name: lines, in: query, schema: {type: integer, default: 500}}
+      responses: {'200': {description: Gateway core log entries}}
+  /api/v1/system/logs/clear:
+    post:
+      tags: [system]
+      responses: {'200': {description: Core logs cleared}}
   /api/v1/remotes:
     get:
       tags: [remotes]
@@ -91,6 +111,18 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/RemoteCreate'}}}
       responses: {'201': {description: Imported}}
+  /api/v1/remotes/providers:
+    get:
+      tags: [remotes]
+      responses: {'200': {description: Supported rclone remote provider types}}
+  /api/v1/remotes/test-config:
+    post:
+      tags: [remotes]
+      description: Test an ad-hoc unsaved remote configuration
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RemoteTestConfig'}}}
+      responses: {'200': {description: Ad-hoc test connection result}}
   /api/v1/remotes/{remoteId}:
     get:
       tags: [remotes]
@@ -236,6 +268,32 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/MountCreate'}}}
       responses: {'201': {description: Mount profile created}}
+  /api/v1/mounts/{mountId}:
+    get:
+      tags: [mounts]
+      parameters: [{name: mountId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200':
+          description: Mount profile details
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Mount'}
+    put:
+      tags: [mounts]
+      parameters: [{name: mountId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MountCreate'}}}
+      responses:
+        '200':
+          description: Mount profile updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Mount'}
+    delete:
+      tags: [mounts]
+      parameters: [{name: mountId, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Mount profile deleted}}
   /api/v1/mounts/{mountId}/start:
     post: {tags: [mounts], parameters: [{name: mountId, in: path, required: true, schema: {type: string}}], responses: {'202': {description: Start requested}}}
   /api/v1/mounts/{mountId}/stop:
@@ -288,6 +346,16 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/RemoteAclCreate'}}}
       responses: {'204': {description: Remote ACL granted}}
+  /api/v1/security/clients/{clientId}:
+    delete:
+      tags: [security]
+      parameters: [{name: clientId, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Client deleted}}
+  /api/v1/security/clients/{clientId}/enable:
+    post:
+      tags: [security]
+      parameters: [{name: clientId, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Client enabled}}
   /api/v1/security/clients/{clientId}/disable:
     post:
       tags: [security]
@@ -307,6 +375,13 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/PairingComplete'}}}
       responses: {'201': {description: Client registered}}
+  /api/v1/security/pairing/cancel:
+    post:
+      tags: [security]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [pairingCode], properties: {pairingCode: {type: string}}}}}
+      responses: {'200': {description: Pairing session cancelled}}
   /api/v1/logs/audit:
     get:
       tags: [logs]
@@ -375,6 +450,16 @@ components:
           writeOnly: true
           additionalProperties: {type: string}
     RemoteUpdate: {$ref: '#/components/schemas/RemoteCreate'}
+    RemoteTestConfig:
+      type: object
+      required: [name, type]
+      properties:
+        name: {type: string}
+        type: {type: string}
+        endpoint: {type: string, nullable: true}
+        secret:
+          type: object
+          additionalProperties: {type: string}
     PathOperation:
       type: object
       required: [remoteId, path]
@@ -423,26 +508,60 @@ components:
         dryRun: {type: boolean}
         schedule: {type: string, nullable: true}
         nextRunAt: {type: integer, format: int64, nullable: true}
+    Mount:
+      type: object
+      required: [id, name, remoteId, remotePath, mountPoint, status, enabled, isolated]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        remoteId: {type: string}
+        remoteName: {type: string, nullable: true}
+        remotePath: {type: string}
+        mountPoint: {type: string}
+        cacheDir: {type: string, nullable: true}
+        status: {type: string, enum: [STOPPED, STARTING, RUNNING, STOPPING, FAILED]}
+        pid: {type: integer, format: int64, nullable: true}
+        readOnly: {type: boolean}
+        cacheMode: {type: string}
+        cacheMaxSize: {type: string}
+        cacheMaxAge: {type: string}
+        enabled: {type: boolean}
+        targetPackage: {type: string, nullable: true}
+        isolated: {type: boolean}
     MountCreate:
       type: object
-      required: [remoteId, remotePath, mountPoint]
+      required: [name, remoteId, mountPoint]
       properties:
+        name: {type: string}
         remoteId: {type: string}
-        remotePath: {type: string}
+        remotePath: {type: string, default: /}
         mountPoint: {type: string, description: FUSE mount path; /mnt/rclone-<name> also gets a derived /data/media/0/<name> bind target}
         cacheDir: {type: string, description: Must remain under the manager cache directory}
         readOnly: {type: boolean, default: false}
         cacheMode: {type: string, enum: [off, minimal, writes, full], default: full}
         cacheMaxSize: {type: string, default: 32G}
         cacheMaxAge: {type: string, default: 36h}
+        targetPackage: {type: string, nullable: true}
+        isolated: {type: boolean, default: false}
     CryptCreate:
       type: object
-      required: [name, remoteId]
+      required: [name, remoteId, password]
       properties:
         name: {type: string}
         remoteId: {type: string}
         remotePath: {type: string, default: /}
-        password: {type: string, writeOnly: true}
+        password: {type: string, writeOnly: true, description: End-to-end encryption master password}
+    CryptProfile:
+      type: object
+      required: [id, name, remoteId, remotePath, passwordConfigured, status]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        remoteId: {type: string}
+        remoteName: {type: string, nullable: true}
+        remotePath: {type: string}
+        passwordConfigured: {type: boolean}
+        status: {type: string}
     Confirmation:
       type: object
       required: [confirmationToken]
