@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -73,6 +74,7 @@ fun CryptScreen(
     bearer: String,
     onShowMessage: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(true) }
     var crypts by remember { mutableStateOf<List<CryptProfileItem>>(emptyList()) }
@@ -84,7 +86,7 @@ fun CryptScreen(
             isLoading = true
             client.crypts(bearer).fold(
                 onSuccess = { crypts = parseCrypts(it) },
-                onFailure = { onShowMessage("获取 Crypt 列表失败: ${it.message}") }
+                onFailure = { onShowMessage(context.getString(R.string.crypt_msg_list_failed, it.message ?: "")) }
             )
             client.remotes(bearer).onSuccess { remotes = parseRemotes(it) }
             isLoading = false
@@ -184,10 +186,10 @@ fun CryptScreen(
                     Button(
                         onClick = {
                             scope.launch {
-                                onShowMessage("正在测试 ${crypt.name} 加密物化…")
+                                onShowMessage(context.getString(R.string.crypt_msg_testing, crypt.name))
                                 client.cryptTest(crypt.id, bearer).fold(
-                                    onSuccess = { onShowMessage("加密测试通过: $it") },
-                                    onFailure = { onShowMessage("加密测试失败: ${it.message}") }
+                                    onSuccess = { onShowMessage(context.getString(R.string.crypt_msg_test_success, it)) },
+                                    onFailure = { onShowMessage(context.getString(R.string.crypt_msg_test_failed, it.message ?: "")) }
                                 )
                             }
                         },
@@ -208,13 +210,13 @@ fun CryptScreen(
                 scope.launch {
                     client.createCrypt(name, remoteId, remotePath.ifBlank { null }, password.ifBlank { null }, bearer).fold(
                         onSuccess = {
-                            onShowMessage("加密档案创建成功")
+                            onShowMessage(context.getString(R.string.crypt_msg_created))
                             showCreateDialog = false
                             loadCrypts()
                         },
                         onFailure = {
-                            val msg = it.message ?: "创建失败"
-                            onShowMessage("创建失败: $msg")
+                            val msg = it.message ?: context.getString(R.string.crypt_msg_create_failed)
+                            onShowMessage(context.getString(R.string.crypt_msg_create_failed_prefix, msg))
                             onError(msg)
                         }
                     )
@@ -231,6 +233,7 @@ fun CreateCryptDialog(
     onDismiss: () -> Unit,
     onSubmit: (name: String, remoteId: String, remotePath: String, password: String, onError: (String) -> Unit) -> Unit
 ) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(TextFieldValue("")) }
     var selectedRemoteId by remember { mutableStateOf(remotes.firstOrNull()?.id ?: "") }
     var remotePath by remember { mutableStateOf(TextFieldValue("/")) }
@@ -279,7 +282,7 @@ fun CreateCryptDialog(
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "关闭",
+                                    contentDescription = stringResource(R.string.action_close),
                                     tint = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -301,7 +304,7 @@ fun CreateCryptDialog(
                         if (nameError != null) {
                             Text(nameError!!, color = MaterialTheme.colorScheme.error)
                         } else {
-                            Text("用于加密映射的英文标识符 (必填)")
+                            Text(stringResource(R.string.crypt_name_hint))
                         }
                     }
                 )
@@ -314,7 +317,7 @@ fun CreateCryptDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.name
-                        ?: if (remotes.isEmpty()) "无可用远端，请先添加远端" else stringResource(R.string.crypt_select_remote_placeholder)
+                        ?: if (remotes.isEmpty()) stringResource(R.string.crypt_no_remotes) else stringResource(R.string.crypt_select_remote_placeholder)
                     OutlinedTextField(
                         value = currentRemoteName,
                         onValueChange = {},
@@ -325,7 +328,7 @@ fun CreateCryptDialog(
                             if (remoteError != null) {
                                 Text(remoteError!!, color = MaterialTheme.colorScheme.error)
                             } else {
-                                Text("被加密的目标底层云存储")
+                                Text(stringResource(R.string.crypt_underlying_remote_hint))
                             }
                         },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = remoteDropdownExpanded) },
@@ -373,7 +376,7 @@ fun CreateCryptDialog(
                         if (passwordError != null) {
                             Text(passwordError!!, color = MaterialTheme.colorScheme.error)
                         } else {
-                            Text("端到端 AES 加密主密码 (必填)")
+                            Text(stringResource(R.string.crypt_password_hint))
                         }
                     }
                 )
@@ -392,34 +395,37 @@ fun CreateCryptDialog(
                     var hasError = false
 
                     if (n.isBlank()) {
-                        nameError = "加密档案名称不能为空"
+                        nameError = context.getString(R.string.crypt_err_name_empty)
                         hasError = true
                     } else if (!n.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
-                        nameError = "档案名称仅允许字母、数字、下划线及连字符"
+                        nameError = context.getString(R.string.crypt_err_name_invalid)
                         hasError = true
                     }
 
                     if (remotes.isEmpty()) {
-                        remoteError = "尚未配置底层存储远端，请先前往「远端」页面添加"
+                        remoteError = context.getString(R.string.crypt_no_remotes)
                         hasError = true
                     } else if (selectedRemoteId.isBlank()) {
-                        remoteError = "请选择一个底层存储远端"
+                        remoteError = context.getString(R.string.crypt_err_remote_empty)
                         hasError = true
                     } else {
                         val parentRemote = remotes.find { it.id == selectedRemoteId }
                         if (parentRemote != null && parentRemote.name == n) {
-                            nameError = "加密档案名称不能与底层远端名称 (${parentRemote.name}) 相同"
+                            nameError = context.getString(R.string.crypt_err_name_conflict_parent)
                             hasError = true
                         }
                     }
 
                     if (p.isBlank()) {
-                        passwordError = "加密密码不能为空，用于派生端到端加密密钥"
+                        passwordError = context.getString(R.string.crypt_err_password_empty)
+                        hasError = true
+                    } else if (p.length < 6) {
+                        passwordError = context.getString(R.string.crypt_err_password_too_short)
                         hasError = true
                     }
 
                     if (hasError) {
-                        dialogError = "表单存在未填写或格式错误的必填项，请检查标红提示"
+                        dialogError = context.getString(R.string.crypt_form_error_generic)
                         return@Button
                     }
 

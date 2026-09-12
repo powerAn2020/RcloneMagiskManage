@@ -35,6 +35,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
@@ -76,6 +77,7 @@ fun DashboardScreen(
     onShowMessage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var isRefreshing by remember { mutableStateOf(false) }
     var healthStatus by remember { mutableStateOf("CONNECTING") }
     var showAdminGrantDialog by remember { mutableStateOf(false) }
@@ -101,7 +103,7 @@ fun DashboardScreen(
                 },
                 onFailure = {
                     healthStatus = "OFFLINE"
-                    healthError = it.message ?: "连接失败"
+                    healthError = it.message ?: context.getString(R.string.dash_health_err_fallback)
                 }
             )
             if (bearer.isNotBlank()) {
@@ -180,10 +182,11 @@ fun DashboardScreen(
                             scope.launch {
                                 isRefreshing = true
                                 client.startGatewayService().fold(
-                                    onSuccess = { onShowMessage(it) },
+                                    onSuccess = { onShowMessage(context.getString(R.string.msg_gateway_started)) },
                                     onFailure = {
                                         val friendly = GatewayErrorParser.parse(it.message ?: "")
-                                        onShowMessage("启动失败: ${friendly.title}")
+                                        val title = if (friendly.titleRes != 0) context.getString(friendly.titleRes) else friendly.title
+                                        onShowMessage(context.getString(R.string.msg_start_failed, title))
                                     }
                                 )
                                 kotlinx.coroutines.delay(1200)
@@ -205,10 +208,11 @@ fun DashboardScreen(
                             scope.launch {
                                 isRefreshing = true
                                 client.stopGatewayService().fold(
-                                    onSuccess = { onShowMessage(it) },
+                                    onSuccess = { onShowMessage(context.getString(R.string.msg_gateway_stopped)) },
                                     onFailure = {
                                         val friendly = GatewayErrorParser.parse(it.message ?: "")
-                                        onShowMessage("停止失败: ${friendly.title}")
+                                        val title = if (friendly.titleRes != 0) context.getString(friendly.titleRes) else friendly.title
+                                        onShowMessage(context.getString(R.string.msg_stop_failed, title))
                                     }
                                 )
                                 kotlinx.coroutines.delay(600)
@@ -231,10 +235,11 @@ fun DashboardScreen(
                             scope.launch {
                                 isRefreshing = true
                                 client.restartGatewayService().fold(
-                                    onSuccess = { onShowMessage(it) },
+                                    onSuccess = { onShowMessage(context.getString(R.string.msg_gateway_restarted)) },
                                     onFailure = {
                                         val friendly = GatewayErrorParser.parse(it.message ?: "")
-                                        onShowMessage("重启失败: ${friendly.title}")
+                                        val title = if (friendly.titleRes != 0) context.getString(friendly.titleRes) else friendly.title
+                                        onShowMessage(context.getString(R.string.msg_restart_failed, title))
                                     }
                                 )
                                 kotlinx.coroutines.delay(1500)
@@ -260,12 +265,15 @@ fun DashboardScreen(
                 ) {
                     Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("查看核心运行日志", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.action_view_core_log), style = MaterialTheme.typography.bodySmall)
                 }
                 if (!healthError.isNullOrBlank()) {
                     Spacer(Modifier.height(8.dp))
                     val clipboard = LocalClipboardManager.current
+                    val copyMsg = stringResource(R.string.gateway_error_copy_log)
                     val friendly = remember(healthError) { GatewayErrorParser.parse(healthError!!) }
+                    val titleText = if (friendly.titleRes != 0) stringResource(friendly.titleRes) else friendly.title
+                    val suggestionText = if (friendly.suggestionRes != 0) stringResource(friendly.suggestionRes) else friendly.suggestion
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
@@ -294,7 +302,7 @@ fun DashboardScreen(
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Text(
-                                        text = friendly.title,
+                                        text = titleText,
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.error
@@ -303,7 +311,7 @@ fun DashboardScreen(
                                 IconButton(
                                     onClick = {
                                         clipboard.setText(AnnotatedString(friendly.rawDetails))
-                                        onShowMessage("已复制底层异常日志")
+                                        onShowMessage(copyMsg)
                                     },
                                     modifier = Modifier.size(24.dp)
                                 ) {
@@ -317,7 +325,7 @@ fun DashboardScreen(
                             }
 
                             Text(
-                                text = friendly.suggestion,
+                                text = suggestionText,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -356,7 +364,7 @@ fun DashboardScreen(
                                 ) {
                                     Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("查看核心日志排障", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.action_view_core_log_troubleshoot), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -508,9 +516,9 @@ fun DashboardScreen(
                             client.autoPair(grantAdmin = true).fold(
                                 onSuccess = {
                                     onTokenUpdated(it)
-                                    onShowMessage("配对成功！已获取管理员特权令牌")
+                                    onShowMessage(context.getString(R.string.dash_msg_auto_pair_admin_success))
                                 },
-                                onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                                onFailure = { onShowMessage(context.getString(R.string.dash_msg_auto_pair_failed, it.message ?: "")) }
                             )
                             refreshDashboard()
                         }
@@ -530,9 +538,9 @@ fun DashboardScreen(
                                 client.autoPair(grantAdmin = false).fold(
                                     onSuccess = {
                                         onTokenUpdated(it)
-                                        onShowMessage("配对成功！已获取常规权限令牌")
+                                        onShowMessage(context.getString(R.string.dash_msg_auto_pair_normal_success))
                                     },
-                                    onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                                    onFailure = { onShowMessage(context.getString(R.string.dash_msg_auto_pair_failed, it.message ?: "")) }
                                 )
                                 refreshDashboard()
                             }

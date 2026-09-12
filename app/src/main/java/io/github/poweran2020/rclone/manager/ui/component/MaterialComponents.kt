@@ -35,11 +35,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.poweran2020.rclone.manager.R
 
 @Composable
 fun SectionTitle(
@@ -111,24 +113,25 @@ fun StatusBadge(status: String, modifier: Modifier = Modifier) {
             .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
+        val label = when (upper) {
+            "RUNNING" -> stringResource(R.string.status_running)
+            "SUCCESS" -> stringResource(R.string.status_badge_success)
+            "FAILED" -> stringResource(R.string.status_badge_failed)
+            "QUEUED" -> stringResource(R.string.status_queued)
+            "PAUSED" -> stringResource(R.string.status_paused)
+            "CANCELLED" -> stringResource(R.string.status_cancelled)
+            "STOPPED" -> stringResource(R.string.status_stopped)
+            "ENABLED" -> stringResource(R.string.status_enabled)
+            "DISABLED" -> stringResource(R.string.status_disabled)
+            "ONLINE" -> stringResource(R.string.status_online)
+            "OFFLINE" -> stringResource(R.string.status_offline)
+            "STARTING" -> stringResource(R.string.status_starting)
+            "STOPPING" -> stringResource(R.string.status_stopping)
+            "CONNECTING" -> stringResource(R.string.status_connecting)
+            else -> status
+        }
         Text(
-            text = when (upper) {
-                "RUNNING" -> "运行中"
-                "SUCCESS" -> "已完成"
-                "FAILED" -> "失败"
-                "QUEUED" -> "排队中"
-                "PAUSED" -> "已暂停"
-                "CANCELLED" -> "已取消"
-                "STOPPED" -> "已停止"
-                "ENABLED" -> "已启用"
-                "DISABLED" -> "已禁用"
-                "ONLINE" -> "在线"
-                "OFFLINE" -> "离线"
-                "STARTING" -> "启动中"
-                "STOPPING" -> "停止中"
-                "CONNECTING" -> "连接中"
-                else -> status
-            },
+            text = label,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = textColor
@@ -223,7 +226,7 @@ fun TextButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier)
 @Composable
 fun EmptyView(
     icon: ImageVector = Icons.Default.Info,
-    title: String = "暂无数据",
+    title: String = stringResource(R.string.common_empty_data),
     message: String = "",
     modifier: Modifier = Modifier
 ) {
@@ -254,7 +257,7 @@ fun EmptyView(
 }
 
 @Composable
-fun LoadingView(message: String = "加载中…", modifier: Modifier = Modifier) {
+fun LoadingView(message: String = stringResource(R.string.status_loading), modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()

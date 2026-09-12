@@ -67,7 +67,7 @@ fun parseRemotes(raw: String): List<RemoteItem> = runCatching {
             add(
                 RemoteItem(
                     id = item.optString("id", item.optString("name")),
-                    name = item.optString("name", "未命名"),
+                    name = item.optString("name", "Unnamed"),
                     type = item.optString("type", "unknown"),
                     endpoint = endpoint,
                     enabled = item.optBoolean("enabled", true),
@@ -110,7 +110,7 @@ fun parseRemote(raw: String): RemoteItem? = runCatching {
     }
     RemoteItem(
         id = item.optString("id", item.optString("name")),
-        name = item.optString("name", "未命名"),
+        name = item.optString("name", "Unnamed"),
         type = item.optString("type", "unknown"),
         endpoint = endpoint,
         enabled = item.optBoolean("enabled", true),
@@ -320,7 +320,7 @@ fun parseMounts(raw: String): List<MountProfileItem> = runCatching {
             add(
                 MountProfileItem(
                     id = item.optString("id"),
-                    name = item.optString("name", "未命名挂载"),
+                    name = item.optString("name", "Unnamed Mount"),
                     remoteId = item.optString("remoteId"),
                     remoteName = item.optNullableString("remoteName"),
                     remotePath = item.optString("remotePath", "/"),
@@ -388,7 +388,7 @@ fun parseClients(raw: String): List<ClientItem> = runCatching {
             add(
                 ClientItem(
                     id = item.optString("id"),
-                    name = item.optString("name", "未知客户端"),
+                    name = item.optString("name", "Unknown Client"),
                     enabled = status == "ACTIVE",
                     status = status,
                     createdAt = item.optLong("createdAt"),
@@ -445,7 +445,7 @@ fun parseSystemInfo(raw: String): SystemInfoItem = runCatching {
     val rcloneVer = when {
         obj.has("rcloneVersion") && obj.getString("rcloneVersion").isNotBlank() -> obj.getString("rcloneVersion")
         obj.has("rclone_version") && obj.getString("rclone_version").isNotBlank() -> obj.getString("rclone_version")
-        else -> "未知"
+        else -> "Unknown"
     }
     val gwVer = when {
         obj.has("gatewayVersion") && obj.getString("gatewayVersion").isNotBlank() -> obj.getString("gatewayVersion")
@@ -461,7 +461,7 @@ fun parseSystemInfo(raw: String): SystemInfoItem = runCatching {
     val mtls = if (obj.has("mtlsRequired")) obj.optBoolean("mtlsRequired", false) else obj.optBoolean("mtls_required", false)
     SystemInfoItem(
         service = obj.optString("service", "rclone-gateway"),
-        rcloneVersion = if (rcloneVer == "unavailable") "未知" else rcloneVer,
+        rcloneVersion = if (rcloneVer == "unavailable") "Unknown" else rcloneVer,
         gatewayVersion = gwVer,
         apiVersion = apiVer,
         root = obj.optBoolean("root", false),
@@ -469,7 +469,7 @@ fun parseSystemInfo(raw: String): SystemInfoItem = runCatching {
         mtlsRequired = mtls,
     )
 }.getOrElse {
-    SystemInfoItem("rclone-gateway", "未知", "1.1.0", "1.1.0", root = false, lanEnabled = false, mtlsRequired = false)
+    SystemInfoItem("rclone-gateway", "Unknown", "1.1.0", "1.1.0", root = false, lanEnabled = false, mtlsRequired = false)
 }
 
 data class SystemSettingsItem(

@@ -174,7 +174,7 @@ fun SecurityScreen(
             isLoading = true
             client.clients(bearer).fold(
                 onSuccess = { clientsList = parseClients(it) },
-                onFailure = { onShowMessage("获取客户端失败: ${it.message}") }
+                onFailure = { onShowMessage(context.getString(R.string.sec_msg_clients_failed, it.message ?: "")) }
             )
             isLoading = false
         }
@@ -227,9 +227,8 @@ fun SecurityScreen(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "• 本机已持有由 Gateway 签发并由 Android Keystore 硬件安全加密的 Bearer 令牌。\n" +
-                        "• 通信通过专属 Unix Domain Socket 直连，日常使用无需再次配对。\n" +
-                        (if (currentClient != null) "• 对应控制端身份: ${currentClient.name} (${currentClient.id.take(8)})" else ""),
+                        stringResource(R.string.security_local_paired_desc) +
+                        (if (currentClient != null) "\n" + stringResource(R.string.security_client_identity, currentClient.name, currentClient.id.take(8)) else ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -238,7 +237,7 @@ fun SecurityScreen(
                         TextButton(onClick = { showRePairOptions = !showRePairOptions }) {
                             Icon(if (showRePairOptions) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
-                            Text(if (showRePairOptions) "收起重新配对选项" else "重新配对本机 (仅在令牌失效时需要)")
+                            Text(if (showRePairOptions) stringResource(R.string.security_re_pair_collapse) else stringResource(R.string.security_re_pair_expand))
                         }
                     }
                     if (showRePairOptions) {
@@ -249,7 +248,7 @@ fun SecurityScreen(
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
-                            Text("重新一键生成并绑定新令牌")
+                            Text(stringResource(R.string.security_btn_re_pair))
                         }
                     }
                 }
@@ -288,9 +287,7 @@ fun SecurityScreen(
                     Text(stringResource(R.string.security_external_clients), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 }
                 Text(
-                    "• 供局域网电脑、Web 控制台或第三方命令行客户端配对授权接入。\n" +
-                    "• 配对码有效期为 60 秒，完成配对后 Gateway 发放独立 Bearer 令牌。\n" +
-                    "• 令牌仅以哈希值落盘，支持按客户端单独禁用与即时令牌轮换。",
+                    stringResource(R.string.security_ext_clients_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -310,21 +307,21 @@ fun SecurityScreen(
                                         pairingCodeInfo = code
                                         pairingExpiresAt = System.currentTimeMillis() + expiresIn * 1000L
                                         pairingRemainingSeconds = expiresIn.toInt()
-                                        onShowMessage("已生成新配对码: $code ($expiresIn 秒有效)")
+                                        onShowMessage("Code: $code ($expiresIn s)")
                                     },
-                                    onFailure = { onShowMessage("启动配对失败: ${it.message}") }
+                                    onFailure = { onShowMessage("${context.getString(R.string.status_failed)}: ${it.message}") }
                                 )
                             }
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(stringResource(R.string.security_get_pairing_code))
+                        Text(stringResource(R.string.security_get_pairing_code), maxLines = 1, softWrap = false)
                     }
                     OutlinedButton(
                         onClick = { showPairingCompleteDialog = true },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("手动完成配对")
+                        Text(stringResource(R.string.security_btn_manual_pair), maxLines = 1, softWrap = false)
                     }
                 }
                 pairingCodeInfo?.let { code ->
@@ -346,7 +343,7 @@ fun SecurityScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("当前一次性配对码: ", style = MaterialTheme.typography.bodyMedium)
+                                        Text(stringResource(R.string.security_current_pairing_code), style = MaterialTheme.typography.bodyMedium)
                                         Text(
                                             text = code,
                                             style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
@@ -356,7 +353,7 @@ fun SecurityScreen(
                                     }
                                     Spacer(Modifier.height(2.dp))
                                     Text(
-                                        text = "⏱️ 有效倒计时: ${pairingRemainingSeconds} 秒",
+                                        text = stringResource(R.string.security_pairing_countdown, pairingRemainingSeconds),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = if (isUrgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontWeight = if (isUrgent) FontWeight.Bold else FontWeight.Normal
@@ -366,9 +363,9 @@ fun SecurityScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     IconButton(onClick = {
                                         clipboard.setPrimaryClip(ClipData.newPlainText("Pairing Code", code))
-                                        onShowMessage("已复制配对码: $code")
+                                        onShowMessage(context.getString(R.string.security_copied_code, code))
                                     }) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = "复制配对码")
+                                        Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.action_copy))
                                     }
                                     IconButton(onClick = {
                                         scope.launch {
@@ -376,12 +373,12 @@ fun SecurityScreen(
                                             pairingCodeInfo = null
                                             pairingExpiresAt = null
                                             pairingRemainingSeconds = 0
-                                            onShowMessage("已立即作废配对码")
+                                            onShowMessage(context.getString(R.string.security_revoked_code))
                                         }
                                     }) {
                                         Icon(
                                             Icons.Default.Close,
-                                            contentDescription = "作废配对码",
+                                            contentDescription = stringResource(R.string.security_revoke_code),
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                     }
@@ -401,7 +398,7 @@ fun SecurityScreen(
                             ) {
                                 Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                                 Text(
-                                    text = "⚠️ 配对码已失效过期，请重新获取",
+                                    text = stringResource(R.string.security_pairing_expired),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                     fontWeight = FontWeight.Medium,
@@ -415,7 +412,7 @@ fun SecurityScreen(
                                         pairingRemainingSeconds = 0
                                     }
                                 }) {
-                                    Text("清除", color = MaterialTheme.colorScheme.error)
+                                    Text(stringResource(R.string.security_btn_clear_code), color = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -434,7 +431,7 @@ fun SecurityScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(8.dp))
-                        Text("局域网 (LAN) 监听服务", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.security_lan_section_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
                     StatusBadge(status = if (lanConfig.enabled) "LISTENING" else "DISABLED")
                 }
@@ -442,9 +439,9 @@ fun SecurityScreen(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     if (lanConfig.enabled)
-                        "• Gateway 正在局域网开放安全 TLS 加密监听端口。\n• 外部电脑、平板或脚本可通过局域网 IP 与端口向网关发送受控请求。"
+                        stringResource(R.string.security_lan_desc_enabled)
                     else
-                        "• 局域网监听默认关闭。开启后，网关将使用 TLS 加密开放局域网 REST API，允许同一局域网内的设备配对并接入管理。",
+                        stringResource(R.string.security_lan_desc_disabled),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -456,8 +453,8 @@ fun SecurityScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(if (lanConfig.enabled) "局域网监听服务已开启" else "开启局域网监听服务", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                        Text(if (lanConfig.enabled) "运行端口: ${lanConfig.port} (TLS 加密)" else "开启时会自动配置自签 TLS 证书并重启网关", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (lanConfig.enabled) stringResource(R.string.security_lan_switch_on) else stringResource(R.string.security_lan_switch_off), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(if (lanConfig.enabled) stringResource(R.string.security_lan_running_port, lanConfig.port) else stringResource(R.string.security_lan_auto_tls_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(
                         checked = lanConfig.enabled,
@@ -471,7 +468,7 @@ fun SecurityScreen(
                                         onShowMessage(msg)
                                         loadLanConfig()
                                     },
-                                    onFailure = { onShowMessage("更新 LAN 配置失败: ${it.message}") }
+                                    onFailure = { onShowMessage(it.message ?: "") }
                                 )
                                 isLanUpdating = false
                             }
@@ -485,14 +482,13 @@ fun SecurityScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("本机可用局域网访问地址:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.security_lan_addresses_label), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         TextButton(
                             onClick = {
                                 scope.launch {
                                     isRefreshingIps = true
                                     deviceIps = client.getDeviceIpAddresses()
                                     isRefreshingIps = false
-                                    onShowMessage(if (deviceIps.isEmpty()) "未检测到有效局域网 IP" else "已刷新检测到 ${deviceIps.size} 个有效 IP")
                                 }
                             },
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
@@ -500,10 +496,10 @@ fun SecurityScreen(
                             if (isRefreshingIps) {
                                 androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
                             } else {
-                                Icon(Icons.Default.Refresh, contentDescription = "刷新 IP", modifier = Modifier.size(14.dp))
+                                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.security_lan_refresh_ips), modifier = Modifier.size(14.dp))
                             }
                             Spacer(Modifier.width(4.dp))
-                            Text("刷新 IP", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.security_lan_refresh_ips), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -523,17 +519,17 @@ fun SecurityScreen(
                                     IconButton(
                                         onClick = {
                                             clipboard.setPrimaryClip(ClipData.newPlainText("LAN API", fullUrl))
-                                            onShowMessage("已复制地址: $fullUrl")
+                                            onShowMessage(context.getString(R.string.security_lan_copied_addr, fullUrl))
                                         },
                                         modifier = Modifier.size(24.dp)
                                     ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = "复制", modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.action_copy), modifier = Modifier.size(16.dp))
                                     }
                                 }
                             }
                         }
                     } else {
-                        Text("未检测到有效局域网 IP（请确认设备已连接 Wi-Fi 或热点）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.security_lan_no_ips_warn), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     }
 
                     Spacer(Modifier.height(8.dp))
@@ -545,7 +541,7 @@ fun SecurityScreen(
                         OutlinedTextField(
                             value = lanPortInput,
                             onValueChange = { lanPortInput = it },
-                            label = { Text("监听端口") },
+                            label = { Text(stringResource(R.string.security_lan_listen_port)) },
                             modifier = Modifier.weight(1f),
                             singleLine = true
                         )
@@ -560,13 +556,13 @@ fun SecurityScreen(
                                             onShowMessage(msg)
                                             loadLanConfig()
                                         },
-                                        onFailure = { onShowMessage("更新端口失败: ${it.message}") }
+                                        onFailure = { onShowMessage(it.message ?: "") }
                                     )
                                     isLanUpdating = false
                                 }
                             }
                         ) {
-                            Text("保存端口")
+                            Text(stringResource(R.string.security_lan_save_port))
                         }
                     }
                 }
@@ -603,7 +599,7 @@ fun SecurityScreen(
                 EmptyView(
                     icon = Icons.Default.Security,
                     title = stringResource(R.string.security_clients_empty),
-                    message = "本地默认 root 进程直接通过 Unix socket 连接。"
+                    message = stringResource(R.string.security_clients_empty_desc)
                 )
             }
         } else {
@@ -631,7 +627,7 @@ fun SecurityScreen(
                                         shape = RoundedCornerShape(4.dp)
                                     ) {
                                         Text(
-                                            "当前本机设备",
+                                            stringResource(R.string.security_client_current_device),
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onPrimary,
@@ -645,8 +641,8 @@ fun SecurityScreen(
                         StatusBadge(status = if (c.enabled) "ACTIVE" else "REVOKED")
                     }
                     Spacer(Modifier.height(4.dp))
-                    InfoRow(label = "注册时间", value = formatEpochTime(c.createdAt))
-                    c.lastUsedAt?.let { InfoRow(label = "最近活跃", value = formatEpochTime(it)) }
+                    InfoRow(label = stringResource(R.string.security_client_created_at), value = formatEpochTime(c.createdAt))
+                    c.lastUsedAt?.let { InfoRow(label = stringResource(R.string.security_client_last_used), value = formatEpochTime(it)) }
 
                     Spacer(Modifier.height(8.dp))
                     // 操作按钮组第一行
@@ -660,14 +656,14 @@ fun SecurityScreen(
                                 scope.launch {
                                     client.grants(c.id, bearer).fold(
                                         onSuccess = { clientGrantsList = parseGrants(it) },
-                                        onFailure = { onShowMessage("加载 Scope 失败: ${it.message}") }
+                                        onFailure = { onShowMessage(it.message ?: "") }
                                     )
                                 }
                             },
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Scope 授权", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.security_btn_scope_grants), style = MaterialTheme.typography.labelSmall)
                         }
 
                         OutlinedButton(
@@ -675,7 +671,7 @@ fun SecurityScreen(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Remote ACL", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.security_btn_remote_acl), style = MaterialTheme.typography.labelSmall)
                         }
 
                         OutlinedButton(
@@ -690,14 +686,14 @@ fun SecurityScreen(
                                             }
                                             rotatedTokenDialog = Pair(c.name, newToken)
                                         },
-                                        onFailure = { onShowMessage("轮换失败: ${it.message}") }
+                                        onFailure = { onShowMessage(it.message ?: "") }
                                     )
                                 }
                             },
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("轮换 Token", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.security_btn_rotate_token), style = MaterialTheme.typography.labelSmall)
                         }
                     }
 
@@ -709,16 +705,15 @@ fun SecurityScreen(
                         OutlinedButton(
                             onClick = {
                                 if (c.isCurrent) {
-                                    onShowMessage("无法禁用当前正在使用的本机控制端")
+                                    return@OutlinedButton
                                 } else {
                                     scope.launch {
                                         val action = if (c.enabled) client.disableClient(c.id, bearer) else client.enableClient(c.id, bearer)
                                         action.fold(
                                             onSuccess = {
-                                                onShowMessage(if (c.enabled) "已禁用该控制端" else "已重新启用该控制端")
                                                 loadClients()
                                             },
-                                            onFailure = { onShowMessage("操作失败: ${it.message}") }
+                                            onFailure = { onShowMessage(it.message ?: "") }
                                         )
                                     }
                                 }
@@ -727,13 +722,13 @@ fun SecurityScreen(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(if (c.isCurrent) "本机已连接" else if (c.enabled) "禁用" else "启用", style = MaterialTheme.typography.labelSmall)
+                            Text(if (c.isCurrent) stringResource(R.string.security_client_connected) else if (c.enabled) stringResource(R.string.security_btn_disable) else stringResource(R.string.security_btn_enable), style = MaterialTheme.typography.labelSmall)
                         }
 
                         OutlinedButton(
                             onClick = {
                                 if (c.isCurrent) {
-                                    onShowMessage("无法删除当前正在使用的本机控制端")
+                                    return@OutlinedButton
                                 } else {
                                     clientToDelete = c
                                 }
@@ -747,7 +742,7 @@ fun SecurityScreen(
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("删除", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.security_btn_delete), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -764,20 +759,20 @@ fun SecurityScreen(
 
         AlertDialog(
             onDismissRequest = { showPairingCompleteDialog = false },
-            title = { Text("手动完成配对与令牌发放", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.security_dialog_pair_manual_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MaterialTextField(value = inputCode, onValueChange = { inputCode = it }, label = "8位一次性配对码")
-                    MaterialTextField(value = inputClientName, onValueChange = { inputClientName = it }, label = "客户端标识名称")
-                    MaterialTextField(value = inputPublicKey, onValueChange = { inputPublicKey = it }, label = "公钥 / 设备签名指纹")
+                    MaterialTextField(value = inputCode, onValueChange = { inputCode = it }, label = stringResource(R.string.security_dialog_code_label))
+                    MaterialTextField(value = inputClientName, onValueChange = { inputClientName = it }, label = stringResource(R.string.security_dialog_client_name_label))
+                    MaterialTextField(value = inputPublicKey, onValueChange = { inputPublicKey = it }, label = stringResource(R.string.security_dialog_public_key_label))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("授予管理员特权", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                            Text("允许导出明文凭据与清空审计日志", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.security_dialog_grant_admin), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.security_dialog_grant_admin_desc), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = inputGrantAdmin, onCheckedChange = { inputGrantAdmin = it })
                     }
@@ -802,23 +797,20 @@ fun SecurityScreen(
                                             pairingExpiresAt = null
                                             pairingRemainingSeconds = 0
                                         }
-                                        onShowMessage(if (inputGrantAdmin) "配对成功！已获取管理员特权令牌" else "配对成功！已获取常规权限令牌")
                                         showPairingCompleteDialog = false
                                         loadClients()
                                     },
-                                    onFailure = { onShowMessage("配对失败: ${it.message}") }
+                                    onFailure = { onShowMessage(it.message ?: "") }
                                 )
                             }
-                        } else {
-                            onShowMessage("请输入有效的一次性配对码（8位）")
                         }
                     }
                 ) {
-                    Text("提交配对")
+                    Text(stringResource(R.string.security_btn_submit_pairing))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showPairingCompleteDialog = false }) { Text("取消") }
+                TextButton(onClick = { showPairingCompleteDialog = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -826,9 +818,9 @@ fun SecurityScreen(
     if (showAutoPairAdminDialog) {
         AlertDialog(
             onDismissRequest = { showAutoPairAdminDialog = false },
-            title = { Text("配对授权确认", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.security_auth_confirm_title), fontWeight = FontWeight.Bold) },
             text = {
-                Text("是否授予本地伴侣端管理员权限？\n\n• 常规权限：允许文件、远端、挂载管理与任务调度（推荐日常使用）。\n• 管理员特权：额外允许导出云存储明文密钥和清空审计日志。")
+                Text(stringResource(R.string.security_auth_confirm_desc))
             },
             confirmButton = {
                 Button(
@@ -839,21 +831,20 @@ fun SecurityScreen(
                                 onSuccess = { token ->
                                     tokenStore.write(token)
                                     onTokenUpdated(token)
-                                    onShowMessage("配对成功！已获取管理员特权令牌并加密生效")
                                     loadClients()
                                 },
-                                onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                                onFailure = { onShowMessage(it.message ?: "") }
                             )
                         }
                     }
                 ) {
-                    Text("授予管理员特权")
+                    Text(stringResource(R.string.security_btn_grant_admin))
                 }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { showAutoPairAdminDialog = false }) {
-                        Text("取消")
+                        Text(stringResource(R.string.action_cancel))
                     }
                     OutlinedButton(
                         onClick = {
@@ -863,15 +854,14 @@ fun SecurityScreen(
                                     onSuccess = { token ->
                                         tokenStore.write(token)
                                         onTokenUpdated(token)
-                                        onShowMessage("配对成功！已获取常规权限令牌并加密生效")
                                         loadClients()
                                     },
-                                    onFailure = { onShowMessage("自动配对失败: ${it.message}") }
+                                    onFailure = { onShowMessage(it.message ?: "") }
                                 )
                             }
                         }
                     ) {
-                        Text("仅常规权限")
+                        Text(stringResource(R.string.security_btn_standard_only))
                     }
                 }
             }
@@ -883,9 +873,9 @@ fun SecurityScreen(
         AlertDialog(
             onDismissRequest = { clientToDelete = null },
             icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("删除控制端", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.security_delete_client_title), fontWeight = FontWeight.Bold) },
             text = {
-                Text("确定要彻底删除控制端「${target.name}」吗？\n\n删除后该控制端的 Token 凭证及所有 Scope、ACL 权限记录将被彻底清除，操作不可逆。")
+                Text(stringResource(R.string.security_delete_client_desc, target.name))
             },
             confirmButton = {
                 Button(
@@ -895,20 +885,19 @@ fun SecurityScreen(
                         scope.launch {
                             client.deleteClient(id, bearer).fold(
                                 onSuccess = {
-                                    onShowMessage("已成功删除控制端「${target.name}」")
                                     loadClients()
                                 },
-                                onFailure = { onShowMessage("删除失败: ${it.message}") }
+                                onFailure = { onShowMessage(it.message ?: "") }
                             )
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("确认删除", color = MaterialTheme.colorScheme.onError)
+                    Text(stringResource(R.string.security_btn_confirm_delete), color = MaterialTheme.colorScheme.onError)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { clientToDelete = null }) { Text("取消") }
+                TextButton(onClick = { clientToDelete = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -928,11 +917,11 @@ fun SecurityScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Scope 授权: ${currentClient.name}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.security_scope_grants_title, currentClient.name), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     IconButton(onClick = { showAddSection = !showAddSection }) {
                         Icon(
                             if (showAddSection) Icons.Default.Block else Icons.Default.Add,
-                            contentDescription = "切换添加面板",
+                            contentDescription = stringResource(R.string.security_scope_toggle_panel),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -951,8 +940,8 @@ fun SecurityScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("➕ 分配新权限", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                                Text("选择预设 Scope：", style = MaterialTheme.typography.labelSmall)
+                                Text(stringResource(R.string.security_scope_assign_new), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.security_scope_select_preset), style = MaterialTheme.typography.labelSmall)
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     commonScopes.forEach { sc ->
                                         FilterChip(
@@ -962,20 +951,19 @@ fun SecurityScreen(
                                         )
                                     }
                                 }
-                                MaterialTextField(value = resourceInput, onValueChange = { resourceInput = it }, label = "作用资源 (默认 *)")
+                                MaterialTextField(value = resourceInput, onValueChange = { resourceInput = it }, label = stringResource(R.string.security_scope_target_resource))
                                 Button(
                                     onClick = {
                                         val res = resourceInput.text.trim().ifBlank { "*" }
                                         scope.launch {
                                             client.grant(currentClient.id, selectedScope, res, bearer).fold(
                                                 onSuccess = {
-                                                    onShowMessage("授权成功")
                                                     showAddSection = false
                                                     client.grants(currentClient.id, bearer).onSuccess {
                                                         clientGrantsList = parseGrants(it)
                                                     }
                                                 },
-                                                onFailure = { onShowMessage("授权失败: ${it.message}") }
+                                                onFailure = { onShowMessage(it.message ?: "") }
                                             )
                                         }
                                     },
@@ -984,7 +972,7 @@ fun SecurityScreen(
                                 ) {
                                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("确认添加权限")
+                                    Text(stringResource(R.string.security_scope_confirm_add))
                                 }
                             }
                         }
@@ -992,7 +980,7 @@ fun SecurityScreen(
 
                     // Grants List
                     if (clientGrantsList.isEmpty()) {
-                        Text("该客户端目前没有任何独立 Scope 授权。", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.security_scope_empty), style = MaterialTheme.typography.bodyMedium)
                     } else {
                         LazyColumn(
                             modifier = Modifier.height(240.dp),
@@ -1013,24 +1001,23 @@ fun SecurityScreen(
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(g.scope, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
-                                            Text("资源: ${g.resource}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text(stringResource(R.string.security_scope_resource_prefix, g.resource), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                         IconButton(
                                             onClick = {
                                                 scope.launch {
                                                     client.revokeGrant(currentClient.id, g.id, bearer).fold(
                                                         onSuccess = {
-                                                            onShowMessage("已撤销授权")
                                                             client.grants(currentClient.id, bearer).onSuccess {
                                                                 clientGrantsList = parseGrants(it)
                                                             }
                                                         },
-                                                        onFailure = { onShowMessage("撤销失败: ${it.message}") }
+                                                        onFailure = { onShowMessage(it.message ?: "") }
                                                     )
                                                 }
                                             }
                                         ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "撤销", tint = MaterialTheme.colorScheme.error)
+                                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_delete), tint = MaterialTheme.colorScheme.error)
                                         }
                                     }
                                 }
@@ -1040,7 +1027,7 @@ fun SecurityScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { selectedClientForGrants = null }) { Text("完成") }
+                TextButton(onClick = { selectedClientForGrants = null }) { Text(stringResource(R.string.security_btn_finish)) }
             }
         )
     }
@@ -1065,22 +1052,22 @@ fun SecurityScreen(
                         selectedRemoteId = parsed[0].id
                     }
                 },
-                onFailure = { onShowMessage("加载远端列表失败: ${it.message}") }
+                onFailure = { onShowMessage(it.message ?: "") }
             )
             isRemotesLoading = false
         }
 
         AlertDialog(
             onDismissRequest = { selectedClientForAcl = null },
-            title = { Text("配置 Remote ACL: ${targetClient.name}", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.security_acl_title, targetClient.name), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (isRemotesLoading) {
-                        Text("正在加载可用远端…")
+                        Text(stringResource(R.string.security_acl_loading_remotes))
                     } else if (remotesList.isEmpty()) {
-                        Text("尚未创建任何远端，请先前往「远端」页面添加存储配置。", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.security_acl_no_remotes), color = MaterialTheme.colorScheme.error)
                     } else {
-                        Text("选择目标远端：", style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(R.string.security_acl_select_remote), style = MaterialTheme.typography.labelSmall)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             remotesList.forEach { r ->
                                 FilterChip(
@@ -1098,7 +1085,7 @@ fun SecurityScreen(
                             permissions = it
                             permissionsError = null
                         },
-                        label = "权限列表 (逗号分隔: file.read,file.write,file.delete,*) *",
+                        label = stringResource(R.string.security_acl_permissions_label),
                         isError = permissionsError != null,
                         supportingText = {
                             if (permissionsError != null) {
@@ -1106,7 +1093,7 @@ fun SecurityScreen(
                             }
                         }
                     )
-                    MaterialTextField(value = prefix, onValueChange = { prefix = it }, label = "允许路径前缀 (如 / 或 /photos)")
+                    MaterialTextField(value = prefix, onValueChange = { prefix = it }, label = stringResource(R.string.security_acl_prefix_label))
                 }
             },
             confirmButton = {
@@ -1115,27 +1102,24 @@ fun SecurityScreen(
                         val perms = permissions.text.trim()
                         val pfx = prefix.text.trim().ifBlank { "/" }
                         if (selectedRemoteId.isBlank()) {
-                            onShowMessage("请选择需要配置权限的目标远端")
                             return@Button
                         }
                         if (perms.isBlank()) {
-                            permissionsError = "权限列表不能为空，例如 file.read,file.write"
                             return@Button
                         }
                         scope.launch {
                             client.remoteAcl(targetClient.id, selectedRemoteId, perms, pfx, bearer).fold(
                                 onSuccess = {
-                                    onShowMessage("Remote ACL 配置成功")
                                     selectedClientForAcl = null
                                 },
-                                onFailure = { onShowMessage("ACL 配置失败: ${it.message}") }
+                                onFailure = { onShowMessage(it.message ?: "") }
                             )
                         }
                     }
-                ) { Text("保存 ACL") }
+                ) { Text(stringResource(R.string.security_btn_save_acl)) }
             },
             dismissButton = {
-                TextButton(onClick = { selectedClientForAcl = null }) { Text("取消") }
+                TextButton(onClick = { selectedClientForAcl = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -1145,10 +1129,10 @@ fun SecurityScreen(
         AlertDialog(
             onDismissRequest = { rotatedTokenDialog = null },
             icon = { Icon(Icons.Default.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text("Token 轮换成功", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.security_token_rotated_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("控制端「$clientName」的新 Bearer 令牌已生成：")
+                    Text(stringResource(R.string.security_token_rotated_desc, clientName))
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(8.dp),
@@ -1162,7 +1146,7 @@ fun SecurityScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    Text("⚠️ 令牌明文仅显示一次，请妥善保存。如果是本机控制端已自动存入 Keystore。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                    Text(stringResource(R.string.security_token_rotated_warning), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                 }
             },
             confirmButton = {
@@ -1170,17 +1154,17 @@ fun SecurityScreen(
                     onClick = {
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("Rclone Gateway Token", newToken))
-                        onShowMessage("已复制令牌到剪贴板")
+                        onShowMessage(context.getString(R.string.token_saved_copied))
                         rotatedTokenDialog = null
                     }
                 ) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("复制并关闭")
+                    Text(stringResource(R.string.security_btn_copy_and_close))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { rotatedTokenDialog = null }) { Text("关闭") }
+                TextButton(onClick = { rotatedTokenDialog = null }) { Text(stringResource(R.string.action_close)) }
             }
         )
     }

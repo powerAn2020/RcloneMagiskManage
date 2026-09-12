@@ -121,7 +121,7 @@ fun JobsScreen(
             isLoading = true
             client.jobs(bearer).fold(
                 onSuccess = { jobs = parseJobs(it) },
-                onFailure = { onShowMessage("获取任务列表失败: ${it.message}") }
+                onFailure = { onShowMessage(context.getString(R.string.jobs_msg_list_failed, it.message ?: "")) }
             )
             isLoading = false
         }
@@ -159,15 +159,12 @@ fun JobsScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
                         onClick = { loadJobs() },
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.action_refresh), maxLines = 1, softWrap = false)
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh), modifier = Modifier.size(20.dp))
                     }
                     Button(
                         onClick = {
@@ -247,8 +244,8 @@ fun JobsScreen(
                                     onClick = {
                                         scope.launch {
                                             client.jobAction(job.id, "start", bearer).fold(
-                                                onSuccess = { onShowMessage("任务已启动"); loadJobs() },
-                                                onFailure = { onShowMessage("启动失败: ${it.message}") }
+                                                onSuccess = { onShowMessage(context.getString(R.string.jobs_msg_started)); loadJobs() },
+                                                onFailure = { onShowMessage(context.getString(R.string.jobs_msg_start_failed, it.message ?: "")) }
                                             )
                                         }
                                     },
@@ -264,8 +261,8 @@ fun JobsScreen(
                                     onClick = {
                                         scope.launch {
                                             client.jobAction(job.id, "pause", bearer).fold(
-                                                onSuccess = { onShowMessage("已请求暂停"); loadJobs() },
-                                                onFailure = { onShowMessage("暂停失败: ${it.message}") }
+                                                onSuccess = { onShowMessage(context.getString(R.string.jobs_msg_pause_req)); loadJobs() },
+                                                onFailure = { onShowMessage(context.getString(R.string.jobs_msg_pause_failed, it.message ?: "")) }
                                             )
                                         }
                                     },
@@ -279,8 +276,8 @@ fun JobsScreen(
                                     onClick = {
                                         scope.launch {
                                             client.jobAction(job.id, "cancel", bearer).fold(
-                                                onSuccess = { onShowMessage("已请求取消"); loadJobs() },
-                                                onFailure = { onShowMessage("取消失败: ${it.message}") }
+                                                onSuccess = { onShowMessage(context.getString(R.string.jobs_msg_cancel_req)); loadJobs() },
+                                                onFailure = { onShowMessage(context.getString(R.string.jobs_msg_cancel_failed, it.message ?: "")) }
                                             )
                                         }
                                     },
@@ -296,8 +293,8 @@ fun JobsScreen(
                                     onClick = {
                                         scope.launch {
                                             client.jobAction(job.id, "resume", bearer).fold(
-                                                onSuccess = { onShowMessage("已恢复执行"); loadJobs() },
-                                                onFailure = { onShowMessage("恢复失败: ${it.message}") }
+                                                onSuccess = { onShowMessage(context.getString(R.string.jobs_msg_resume_req)); loadJobs() },
+                                                onFailure = { onShowMessage(context.getString(R.string.jobs_msg_resume_failed, it.message ?: "")) }
                                             )
                                         }
                                     },
@@ -315,8 +312,8 @@ fun JobsScreen(
                                 onClick = {
                                     scope.launch {
                                         client.jobAction(job.id, "retry", bearer).fold(
-                                            onSuccess = { onShowMessage("已提交重试"); loadJobs() },
-                                            onFailure = { onShowMessage("重试失败: ${it.message}") }
+                                            onSuccess = { onShowMessage(context.getString(R.string.jobs_msg_retry_req)); loadJobs() },
+                                            onFailure = { onShowMessage(context.getString(R.string.jobs_msg_retry_failed, it.message ?: "")) }
                                         )
                                     }
                                 },
@@ -336,7 +333,7 @@ fun JobsScreen(
                                             jobRunsList = parseJobRuns(it)
                                             selectedRunsJob = job
                                         },
-                                        onFailure = { onShowMessage("获取运行记录失败: ${it.message}") }
+                                        onFailure = { onShowMessage(context.getString(R.string.jobs_msg_runs_failed, it.message ?: "")) }
                                     )
                                 }
                             },
@@ -354,7 +351,7 @@ fun JobsScreen(
                                         onSuccess = { logText ->
                                             viewingLogJob = job to logText
                                         },
-                                        onFailure = { onShowMessage("获取日志失败: ${it.message}") }
+                                        onFailure = { onShowMessage(context.getString(R.string.jobs_msg_logs_failed, it.message ?: "")) }
                                     )
                                 }
                             },
@@ -400,13 +397,13 @@ fun JobsScreen(
                     client.deleteJob(target.id, bearer).fold(
                         onSuccess = {
                             isDeletingJob = false
-                            onShowMessage("任务已删除")
+                            onShowMessage(context.getString(R.string.jobs_msg_deleted))
                             jobToDelete = null
                             loadJobs()
                         },
                         onFailure = {
                             isDeletingJob = false
-                            onShowMessage("删除失败: ${it.message}")
+                            onShowMessage(context.getString(R.string.jobs_msg_delete_failed, it.message ?: ""))
                         }
                     )
                 }
@@ -430,13 +427,13 @@ fun JobsScreen(
                 scope.launch {
                     client.createJob(type, src, dest, bearer, schedule, netPolicy, batPolicy, dryRun, options).fold(
                         onSuccess = {
-                            onShowMessage("任务创建成功")
+                            onShowMessage(context.getString(R.string.jobs_msg_created))
                             showCreateDialog = false
                             loadJobs()
                         },
                         onFailure = {
-                            val msg = it.message ?: "创建任务失败"
-                            onShowMessage("创建任务失败: $msg")
+                            val msg = it.message ?: context.getString(R.string.jobs_msg_create_failed, "")
+                            onShowMessage(context.getString(R.string.jobs_msg_create_failed, msg))
                             onError(msg)
                         }
                     )
@@ -464,7 +461,7 @@ fun JobsScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("状态", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.common_status), style = MaterialTheme.typography.labelSmall)
                                     StatusBadge(status = run.state)
                                 }
                                 run.startedAt?.let { InfoRow(label = stringResource(R.string.jobs_history_start_time), value = formatEpochTime(it)) }
@@ -541,9 +538,9 @@ fun JobsScreen(
                     IconButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("job-log", actualLog))
-                        onShowMessage("日志已复制到剪贴板")
+                        onShowMessage(context.getString(R.string.log_msg_copied))
                     }) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "复制日志")
+                        Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.action_copy))
                     }
                 }
             },
@@ -572,7 +569,7 @@ fun JobsScreen(
                                 color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
                             ) {
                                 Text(
-                                    text = mode.title,
+                                    text = stringResource(mode.titleRes),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                     color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -619,7 +616,7 @@ fun JobsScreen(
                                                     horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
                                                     Column {
-                                                        Text("传输数据", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        Text(stringResource(R.string.jobs_stat_transferred_data), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                         Text(
                                                             "${formatBytes(latestStats.bytes)} / ${formatBytes(latestStats.totalBytes)}",
                                                             style = MaterialTheme.typography.bodyMedium,
@@ -627,9 +624,9 @@ fun JobsScreen(
                                                         )
                                                     }
                                                     Column(horizontalAlignment = Alignment.End) {
-                                                        Text("传输文件", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        Text(stringResource(R.string.jobs_stat_transferred_files), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                         Text(
-                                                            "${latestStats.transfers} / ${latestStats.totalTransfers} 个",
+                                                            stringResource(R.string.jobs_stat_files_count, latestStats.transfers, latestStats.totalTransfers),
                                                             style = MaterialTheme.typography.bodyMedium,
                                                             fontWeight = FontWeight.Bold
                                                         )
@@ -640,15 +637,15 @@ fun JobsScreen(
                                                     horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
                                                     Column {
-                                                        Text("运行时长", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        Text(stringResource(R.string.jobs_stat_elapsed_time), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                         Text(
-                                                            String.format(Locale.US, "%.1f 秒", latestStats.elapsedTime),
+                                                            String.format(Locale.US, stringResource(R.string.jobs_stat_seconds), latestStats.elapsedTime),
                                                             style = MaterialTheme.typography.bodyMedium,
                                                             fontWeight = FontWeight.Bold
                                                         )
                                                     }
                                                     Column(horizontalAlignment = Alignment.End) {
-                                                        Text("瞬时速度", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        Text(stringResource(R.string.jobs_stat_speed), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                         Text(
                                                             "${formatBytes(latestStats.speed.toLong())}/s",
                                                             style = MaterialTheme.typography.bodyMedium,
@@ -658,7 +655,7 @@ fun JobsScreen(
                                                 }
                                                 if (latestStats.errors > 0) {
                                                     Text(
-                                                        "异常错误: ${latestStats.errors} 次",
+                                                        stringResource(R.string.jobs_stat_errors_count, latestStats.errors),
                                                         style = MaterialTheme.typography.bodySmall,
                                                         color = MaterialTheme.colorScheme.error,
                                                         fontWeight = FontWeight.Bold
@@ -722,7 +719,7 @@ fun JobsScreen(
                                                             .filter { it.isNotBlank() }
                                                             .joinToString("\n")
                                                         Text(
-                                                            displayMsg.ifBlank { "(无详细信息)" },
+                                                            displayMsg.ifBlank { stringResource(R.string.jobs_log_no_details) },
                                                             style = MaterialTheme.typography.bodySmall
                                                         )
                                                     }
@@ -824,6 +821,7 @@ fun CreateJobDialog(
     onDismiss: () -> Unit,
     onSubmit: (type: String, src: String, dest: String, schedule: String?, net: String?, bat: String?, dryRun: Boolean, options: JSONObject?, onError: (String) -> Unit) -> Unit
 ) {
+    val context = LocalContext.current
     var type by remember { mutableStateOf("copy") }
     var source by remember { mutableStateOf(TextFieldValue("")) }
     var destination by remember { mutableStateOf(TextFieldValue("")) }
@@ -841,14 +839,14 @@ fun CreateJobDialog(
 
     // Schedule presets
     val schedulePresets = listOf(
-        Pair("不自动调度 (仅手动执行)", null),
-        Pair("开机时执行一次 (@reboot)", "@reboot"),
-        Pair("每 5 分钟 (*/5 * * * *)", "*/5 * * * *"),
-        Pair("每 15 分钟 (*/15 * * * *)", "*/15 * * * *"),
-        Pair("每 30 分钟 (*/30 * * * *)", "*/30 * * * *"),
-        Pair("每小时执行一次 (@hourly)", "@hourly"),
-        Pair("每天执行一次 (@daily)", "@daily"),
-        Pair("自定义表达式...", "CUSTOM")
+        Pair(stringResource(R.string.jobs_sched_manual), null),
+        Pair(stringResource(R.string.jobs_sched_reboot), "@reboot"),
+        Pair(stringResource(R.string.jobs_sched_5min), "*/5 * * * *"),
+        Pair(stringResource(R.string.jobs_sched_15min), "*/15 * * * *"),
+        Pair(stringResource(R.string.jobs_sched_30min), "*/30 * * * *"),
+        Pair(stringResource(R.string.jobs_sched_hourly), "@hourly"),
+        Pair(stringResource(R.string.jobs_sched_daily), "@daily"),
+        Pair(stringResource(R.string.jobs_sched_custom), "CUSTOM")
     )
     var selectedScheduleIndex by remember { mutableStateOf(0) }
     var customScheduleText by remember { mutableStateOf(TextFieldValue("")) }
@@ -910,7 +908,7 @@ fun CreateJobDialog(
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "关闭",
+                                    contentDescription = stringResource(R.string.action_close),
                                     tint = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -967,13 +965,13 @@ fun CreateJobDialog(
                     remotes = remotes,
                     client = client,
                     bearer = bearer,
-                    placeholder = "例如: remote:path 或 /sdcard/...",
+                    placeholder = stringResource(R.string.jobs_path_placeholder),
                     isError = sourceError != null,
                     supportingText = {
                         if (sourceError != null) {
                             Text(sourceError!!, color = MaterialTheme.colorScheme.error)
                         } else {
-                            Text("传输源路径 (必填)")
+                            Text(stringResource(R.string.jobs_src_hint))
                         }
                     }
                 )
@@ -990,13 +988,13 @@ fun CreateJobDialog(
                         remotes = remotes,
                         client = client,
                         bearer = bearer,
-                        placeholder = "例如: remote:path 或 /sdcard/...",
+                        placeholder = stringResource(R.string.jobs_path_placeholder),
                         isError = destinationError != null,
                         supportingText = {
                             if (destinationError != null) {
                                 Text(destinationError!!, color = MaterialTheme.colorScheme.error)
                             } else {
-                                Text("传输目标路径 (必填)")
+                                Text(stringResource(R.string.jobs_dest_hint))
                             }
                         }
                     )
@@ -1047,7 +1045,7 @@ fun CreateJobDialog(
                             customScheduleError = null
                             dialogError = null
                         },
-                        label = "自定义调度表达式 (例如: @every 30s 或 */10 * * * *) *",
+                        label = stringResource(R.string.jobs_sched_custom_label),
                         isError = customScheduleError != null,
                         supportingText = {
                             if (customScheduleError != null) {
@@ -1214,36 +1212,36 @@ fun CreateJobDialog(
                     var hasError = false
 
                     if (src.isBlank()) {
-                        sourceError = "源路径不能为空，例如 remote:path 或 /sdcard/..."
+                        sourceError = context.getString(R.string.jobs_err_src_empty)
                         hasError = true
                     }
 
                     if (type != "delete" && dest.isBlank()) {
-                        destinationError = "目标路径不能为空，例如 remote:path 或 /sdcard/..."
+                        destinationError = context.getString(R.string.jobs_err_dest_empty)
                         hasError = true
                     }
 
                     val isCustomSchedule = schedulePresets[selectedScheduleIndex].second == "CUSTOM"
                     val customSchedule = customScheduleText.text.trim()
                     if (isCustomSchedule && customSchedule.isBlank()) {
-                        customScheduleError = "请输入有效的调度表达式 (如 @every 30s 或 */10 * * * *)"
+                        customScheduleError = context.getString(R.string.jobs_err_custom_schedule_invalid)
                         hasError = true
                     }
 
                     val transfersVal = transfers.text.trim().toIntOrNull()
                     if (transfers.text.isNotBlank() && (transfersVal == null || transfersVal !in 1..32)) {
-                        transfersError = "并发传输数范围为 1..32"
+                        transfersError = context.getString(R.string.jobs_err_transfers_range)
                         hasError = true
                     }
 
                     val checkersVal = checkers.text.trim().toIntOrNull()
                     if (checkers.text.isNotBlank() && (checkersVal == null || checkersVal !in 1..64)) {
-                        checkersError = "并发检查数范围为 1..64"
+                        checkersError = context.getString(R.string.jobs_err_checkers_range)
                         hasError = true
                     }
 
                     if (hasError) {
-                        dialogError = "表单存在未填写或格式错误的必填项，请检查标红提示"
+                        dialogError = context.getString(R.string.jobs_form_error_generic)
                         return@Button
                     }
 
@@ -1296,10 +1294,10 @@ fun CreateJobDialog(
     )
 }
 
-enum class LogViewMode(val title: String) {
-    STRUCTURED("结构化"),
-    TERMINAL("控制台"),
-    RAW("原始 JSON")
+enum class LogViewMode(@androidx.annotation.StringRes val titleRes: Int) {
+    STRUCTURED(R.string.jobs_log_mode_structured),
+    TERMINAL(R.string.jobs_log_mode_terminal),
+    RAW(R.string.jobs_log_mode_raw)
 }
 
 data class ParsedLogEntry(

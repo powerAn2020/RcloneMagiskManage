@@ -48,11 +48,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.poweran2020.rclone.manager.GatewayClient
+import io.github.poweran2020.rclone.manager.R
 import kotlinx.coroutines.launch
 
 @Composable
@@ -84,7 +86,8 @@ fun CoreLogDialog(
                     isLoading = false
                 },
                 onFailure = { err ->
-                    logText = "[读取失败] ${err.message ?: "无法读取核心日志"}"
+                    val fallback = context.getString(R.string.core_log_err_fallback)
+                    logText = context.getString(R.string.core_log_err_prefix, err.message ?: fallback)
                     isLoading = false
                 }
             )
@@ -128,12 +131,12 @@ fun CoreLogDialog(
                     )
                     Column {
                         Text(
-                            text = "核心运行日志",
+                            text = stringResource(R.string.log_dialog_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "gateway.log (${lines.size} 行)",
+                            text = "gateway.log (${lines.size})",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -149,7 +152,7 @@ fun CoreLogDialog(
                         if (isLoading) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "刷新日志", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.log_cd_refresh), modifier = Modifier.size(18.dp))
                         }
                     }
 
@@ -157,12 +160,12 @@ fun CoreLogDialog(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("gateway-core-log", logText))
-                            onShowMessage("核心日志已复制到剪贴板")
+                            onShowMessage(context.getString(R.string.log_msg_copied))
                         },
                         enabled = logText.isNotBlank(),
                         modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "复制日志", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.log_cd_copy), modifier = Modifier.size(18.dp))
                     }
 
                     IconButton(
@@ -172,7 +175,7 @@ fun CoreLogDialog(
                     ) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = "清空日志",
+                            contentDescription = stringResource(R.string.log_btn_clear),
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(18.dp)
                         )
@@ -196,7 +199,7 @@ fun CoreLogDialog(
                         FilterChip(
                             selected = lineCount == count,
                             onClick = { lineCount = count },
-                            label = { Text("${count}行", style = MaterialTheme.typography.bodySmall) }
+                            label = { Text("$count", style = MaterialTheme.typography.bodySmall) }
                         )
                     }
                 }
@@ -216,7 +219,7 @@ fun CoreLogDialog(
                     } else if (lines.isEmpty()) {
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             Text(
-                                text = "暂无运行日志或日志为空",
+                                text = stringResource(R.string.log_empty),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFFA1A1AA)
                             )
@@ -252,7 +255,7 @@ fun CoreLogDialog(
         },
         confirmButton = {
             TextButton(onClick = { onDismiss() }) {
-                Text("关闭")
+                Text(stringResource(R.string.action_close))
             }
         }
     )
@@ -261,8 +264,8 @@ fun CoreLogDialog(
         AlertDialog(
             onDismissRequest = { if (!isClearing) showClearConfirm = false },
             icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("确认清空核心运行日志？", fontWeight = FontWeight.Bold) },
-            text = { Text("将截断并清空 /data/adb/rclone-manage/logs/gateway.log 文件内容，该操作无法撤销。") },
+            title = { Text(stringResource(R.string.log_btn_clear), fontWeight = FontWeight.Bold) },
+            text = { Text(stringResource(R.string.log_confirm_clear_msg)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -272,12 +275,12 @@ fun CoreLogDialog(
                                 onSuccess = {
                                     isClearing = false
                                     showClearConfirm = false
-                                    onShowMessage("核心日志已清空")
+                                    onShowMessage(context.getString(R.string.log_msg_cleared))
                                     fetchLogs()
                                 },
                                 onFailure = { err ->
                                     isClearing = false
-                                    onShowMessage("清空失败: ${err.message}")
+                                    onShowMessage(err.message ?: "Clear failed")
                                 }
                             )
                         }
@@ -285,7 +288,7 @@ fun CoreLogDialog(
                     enabled = !isClearing,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text(if (isClearing) "正在清空…" else "确认清空")
+                    Text(if (isClearing) stringResource(R.string.action_clearing) else stringResource(R.string.action_clear))
                 }
             },
             dismissButton = {
@@ -293,7 +296,7 @@ fun CoreLogDialog(
                     onClick = { showClearConfirm = false },
                     enabled = !isClearing
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

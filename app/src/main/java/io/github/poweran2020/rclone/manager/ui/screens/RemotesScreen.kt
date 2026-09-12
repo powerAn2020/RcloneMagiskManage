@@ -146,9 +146,9 @@ fun RemotesScreen(
             val decoded = runCatching { QrCodeUtils.decodeQrFromUri(context, uri) }.getOrNull()
             if (!decoded.isNullOrBlank()) {
                 pendingImportQrCode = decoded
-                onShowMessage("已成功解析二维码配置！")
+                onShowMessage(context.getString(R.string.remotes_msg_qr_parsed))
             } else {
-                onShowMessage("未能从图片中解析出二维码")
+                onShowMessage(context.getString(R.string.remotes_msg_qr_parse_failed))
             }
         }
     }
@@ -163,9 +163,9 @@ fun RemotesScreen(
                 context.contentResolver.openOutputStream(uri)?.use { stream ->
                     stream.write(exportContentToSave!!.toByteArray())
                 }
-                onShowMessage("已成功保存至文件")
+                onShowMessage(context.getString(R.string.remotes_msg_import_success))
             } catch (e: Exception) {
-                onShowMessage("保存失败: ${e.message}")
+                onShowMessage(context.getString(R.string.remotes_msg_import_failed) + ": ${e.message}")
             }
         }
     }
@@ -175,7 +175,7 @@ fun RemotesScreen(
             isLoading = true
             client.remotes(bearer).fold(
                 onSuccess = { remotes = parseRemotes(it) },
-                onFailure = { onShowMessage("获取远端失败: ${it.message}") }
+                onFailure = { onShowMessage(context.getString(R.string.remotes_msg_list_failed, it.message ?: "")) }
             )
             isLoading = false
         }
@@ -279,10 +279,11 @@ fun RemotesScreen(
                                         val action = if (remote.enabled) "disable" else "enable"
                                         client.remoteAction(remote.id, action, bearer).fold(
                                             onSuccess = {
-                                                onShowMessage("远端已${if (remote.enabled) "禁用" else "启用"}")
+                                                val actionStr = if (remote.enabled) context.getString(R.string.remotes_status_disabled_action) else context.getString(R.string.remotes_status_enabled_action)
+                                                onShowMessage(context.getString(R.string.remotes_msg_status_changed, actionStr))
                                                 loadRemotes()
                                             },
-                                            onFailure = { onShowMessage("操作失败: ${it.message}") }
+                                            onFailure = { onShowMessage(context.getString(R.string.remotes_msg_op_failed, it.message ?: "")) }
                                         )
                                     }
                                 }
@@ -300,18 +301,18 @@ fun RemotesScreen(
                             Button(
                                 onClick = {
                                     scope.launch {
-                                        onShowMessage("正在测试连接 ${remote.name}…")
+                                        onShowMessage(context.getString(R.string.remotes_msg_testing, remote.name))
                                         client.testRemote(remote.id, bearer).fold(
                                             onSuccess = { res ->
                                                 val json = runCatching { JSONObject(res) }.getOrNull()
                                                 if (json?.optBoolean("ok") == true) {
-                                                    onShowMessage("测试成功: 远端服务连接正常")
+                                                    onShowMessage(context.getString(R.string.remotes_msg_test_success))
                                                 } else {
-                                                    val errMsg = json?.optString("error")?.ifBlank { null } ?: "无法连接到该远端服务"
-                                                    onShowMessage("测试失败: $errMsg")
+                                                    val errMsg = json?.optString("error")?.ifBlank { null } ?: context.getString(R.string.remotes_msg_test_failed_fallback)
+                                                    onShowMessage(context.getString(R.string.remotes_msg_test_failed, errMsg))
                                                 }
                                             },
-                                            onFailure = { onShowMessage("测试请求失败: ${it.message}") }
+                                            onFailure = { onShowMessage(context.getString(R.string.remotes_msg_test_failed, it.message ?: "")) }
                                         )
                                     }
                                 },
@@ -343,12 +344,12 @@ fun RemotesScreen(
                                     scope.launch {
                                         client.exportRemote(remote.id, bearer).fold(
                                             onSuccess = { exportData = parseRemoteExport(it) },
-                                            onFailure = { onShowMessage("导出失败: ${it.message}") }
+                                            onFailure = { onShowMessage(context.getString(R.string.remotes_msg_export_failed, it.message ?: "")) }
                                         )
                                     }
                                 }
                             ) {
-                                Icon(Icons.Default.Share, contentDescription = "导出分享")
+                                Icon(Icons.Default.Share, contentDescription = stringResource(R.string.remotes_cd_share))
                             }
 
                             IconButton(
@@ -371,16 +372,16 @@ fun RemotesScreen(
                                                 if (token.isNotBlank()) {
                                                     deleteCandidate = remote to token
                                                 } else {
-                                                    onShowMessage("已删除")
+                                                    onShowMessage(context.getString(R.string.remotes_msg_deleted))
                                                     loadRemotes()
                                                 }
                                             },
-                                            onFailure = { onShowMessage("删除失败: ${it.message}") }
+                                            onFailure = { onShowMessage(context.getString(R.string.remotes_msg_delete_failed, it.message ?: "")) }
                                         )
                                     }
                                 }
                             ) {
-                                Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_delete), tint = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -404,12 +405,12 @@ fun RemotesScreen(
                 scope.launch {
                     client.createRemote(name, type, endpoint.ifBlank { null }, secret, bearer).fold(
                         onSuccess = {
-                            onShowMessage("远端添加成功")
+                            onShowMessage(context.getString(R.string.remotes_msg_created))
                             showCreateDialog = false
                             onSuccess()
                             loadRemotes()
                         },
-                        onFailure = { onError("添加失败: ${it.message}") }
+                        onFailure = { onError(context.getString(R.string.remotes_msg_create_failed, it.message ?: "")) }
                     )
                 }
             }
@@ -433,12 +434,12 @@ fun RemotesScreen(
                 scope.launch {
                     client.updateRemote(remote.id, name, type, endpoint.ifBlank { null }, bearer, secret).fold(
                         onSuccess = {
-                            onShowMessage("远端更新成功")
+                            onShowMessage(context.getString(R.string.remotes_msg_updated))
                             editingRemote = null
                             onSuccess()
                             loadRemotes()
                         },
-                        onFailure = { onError("更新失败: ${it.message}") }
+                        onFailure = { onError(context.getString(R.string.remotes_msg_update_failed, it.message ?: "")) }
                     )
                 }
             }
@@ -461,12 +462,12 @@ fun RemotesScreen(
                     client.importRemoteConfig(configText, bearer).fold(
                         onSuccess = { res ->
                             val count = runCatching { JSONObject(res).optJSONArray("imported")?.length() ?: 0 }.getOrDefault(0)
-                            onShowMessage("成功导入 $count 个远端配置")
+                            onShowMessage(context.getString(R.string.remotes_msg_import_count_success, count))
                             showImportDialog = false
                             onSuccess()
                             loadRemotes()
                         },
-                        onFailure = { onError("导入失败: ${it.message}") }
+                        onFailure = { onError(context.getString(R.string.remotes_msg_import_failed) + ": ${it.message}") }
                     )
                 }
             }
@@ -487,13 +488,13 @@ fun RemotesScreen(
                     client.remoteDelete(remote.id, bearer, token).fold(
                         onSuccess = {
                             isDeletingRemote = false
-                            onShowMessage("远端已成功删除")
+                            onShowMessage(context.getString(R.string.remotes_msg_deleted))
                             deleteCandidate = null
                             loadRemotes()
                         },
                         onFailure = {
                             isDeletingRemote = false
-                            onShowMessage("删除失败: ${it.message}")
+                            onShowMessage(context.getString(R.string.remotes_msg_delete_failed, it.message ?: ""))
                         }
                     )
                 }
@@ -529,12 +530,12 @@ fun RemotesScreen(
                 )
             },
             title = {
-                Text("无法删除远端: ${remote.name}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.remotes_cannot_delete_title, remote.name), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "检测到该远端当前被以下挂载配置引用。为保证系统文件访问稳定，禁止删除该远端：",
+                        stringResource(R.string.remotes_cannot_delete_desc),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     referencedMounts.forEach { m ->
@@ -545,10 +546,11 @@ fun RemotesScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                Text("挂载名称: ${m.name}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                Text("本地挂载点: ${m.mountPoint}", style = MaterialTheme.typography.bodySmall)
+                                Text(stringResource(R.string.remotes_cannot_delete_mount_name, m.name), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(R.string.remotes_cannot_delete_mount_point, m.mountPoint), style = MaterialTheme.typography.bodySmall)
+                                val stStr = if (isRunning) stringResource(R.string.remotes_mount_status_running) else stringResource(R.string.remotes_mount_status_stopped)
                                 Text(
-                                    "运行状态: ${if (isRunning) "⚠️ 挂载运行中" else "已停止"}",
+                                    stringResource(R.string.remotes_mount_status_prefix, stStr),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (isRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = if (isRunning) FontWeight.Bold else FontWeight.Normal
@@ -557,7 +559,7 @@ fun RemotesScreen(
                         }
                     }
                     Text(
-                        "提示：请先前往【更多 -> 挂载管理】停止并删除相关挂载配置，然后再尝试删除此远端。",
+                        stringResource(R.string.remotes_cannot_delete_tip),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -565,7 +567,7 @@ fun RemotesScreen(
             },
             confirmButton = {
                 Button(onClick = { mountConflictWarning = null }) {
-                    Text("我知道了")
+                    Text(stringResource(R.string.remotes_cannot_delete_btn))
                 }
             }
         )
@@ -595,6 +597,7 @@ fun RemoteFormDialog(
     onDismiss: () -> Unit,
     onSubmit: (name: String, type: String, endpoint: String, secret: JSONObject?, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(TextFieldValue(initialName)) }
     var nameError by remember { mutableStateOf<String?>(null) }
@@ -665,12 +668,12 @@ fun RemoteFormDialog(
         dialogError = null
 
         if (name.text.isBlank()) {
-            nameError = "远端名称不能为空"
+            nameError = context.getString(R.string.remotes_err_name_empty)
             nameFocusRequester.requestFocus()
             return false
         }
         if (!name.text.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
-            nameError = "远端名称仅允许字母、数字、下划线及连字符"
+            nameError = context.getString(R.string.remotes_err_name_invalid)
             nameFocusRequester.requestFocus()
             return false
         }
@@ -682,7 +685,7 @@ fun RemoteFormDialog(
             }
             if (emptyRequired.isNotEmpty()) {
                 emptyRequired.forEach { opt ->
-                    optionErrors[opt.name] = "${opt.name} 为必填项"
+                    optionErrors[opt.name] = context.getString(R.string.remotes_err_field_required, opt.name)
                 }
                 val first = emptyRequired.first()
                 optionFocusRequesters[first.name]?.requestFocus()
@@ -691,7 +694,7 @@ fun RemoteFormDialog(
         } else {
             val urlVal = optionValues["url"] ?: optionValues["endpoint"] ?: ""
             if (type.equals("webdav", ignoreCase = true) && urlVal.isBlank()) {
-                optionErrors["url"] = "服务器地址 / URL 为必填项"
+                optionErrors["url"] = context.getString(R.string.remotes_err_url_required)
                 optionFocusRequesters["url"]?.requestFocus()
                 return false
             }
@@ -719,20 +722,20 @@ fun RemoteFormDialog(
                     val ok = json?.optBoolean("ok", false) ?: false
                     if (ok) {
                         testState = RemoteTestState.SUCCESS
-                        dialogSuccess = "连接测试成功！远端配置有效且响应正常。"
+                        dialogSuccess = context.getString(R.string.remotes_test_success_desc)
                         dialogError = null
                         onTestResult(true)
                     } else {
                         testState = RemoteTestState.FAILED
-                        val errMsg = json?.optString("error")?.ifBlank { null } ?: "连接失败"
-                        dialogError = "测试连接失败: $errMsg"
+                        val errMsg = json?.optString("error")?.ifBlank { null } ?: context.getString(R.string.remotes_test_failed_fallback)
+                        dialogError = context.getString(R.string.remotes_test_failed_format, errMsg)
                         dialogSuccess = null
                         onTestResult(false)
                     }
                 },
                 onFailure = { err ->
                     testState = RemoteTestState.FAILED
-                    dialogError = "测试请求异常: ${err.message}"
+                    dialogError = context.getString(R.string.remotes_test_error_format, err.message ?: "")
                     dialogSuccess = null
                     onTestResult(false)
                 }
@@ -749,7 +752,7 @@ fun RemoteFormDialog(
                     // 已通过测试，继续保存
                 }
                 RemoteTestState.FAILED -> {
-                    dialogError = "连接测试未通过，无法保存！请检查配置并确保测试通过后再添加。"
+                    dialogError = context.getString(R.string.remotes_err_test_must_pass)
                     return
                 }
                 RemoteTestState.TESTING -> {
@@ -832,7 +835,7 @@ fun RemoteFormDialog(
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "关闭",
+                                    contentDescription = stringResource(R.string.action_close),
                                     tint = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -877,7 +880,7 @@ fun RemoteFormDialog(
                 ) {
                     if (isEditing) {
                         Text(
-                            text = "提示：留空的密码或 Secret 选项将保留原有的加密值，不会被覆盖。",
+                            text = stringResource(R.string.remotes_form_secret_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -890,13 +893,13 @@ fun RemoteFormDialog(
                         if (nameError != null) nameError = null
                         invalidateTestState()
                     },
-                    label = { Text("远端名称 (英文标识符，例如 mydav) *") },
+                    label = { Text(stringResource(R.string.remotes_form_name_label)) },
                     isError = nameError != null,
                     supportingText = {
                         if (nameError != null) {
                             Text(nameError!!, color = MaterialTheme.colorScheme.error)
                         } else {
-                            Text("用于挂载和任务引用的唯一英文标识符")
+                            Text(stringResource(R.string.remotes_form_name_hint))
                         }
                     },
                     singleLine = true,
@@ -906,7 +909,7 @@ fun RemoteFormDialog(
                 )
 
                 Text(
-                    text = "常用存储类型",
+                    text = stringResource(R.string.remotes_form_common_types),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -949,7 +952,7 @@ fun RemoteFormDialog(
                             optionErrors.clear()
                             invalidateTestState()
                         },
-                        label = { Text("存储类型 (可输入搜索)") },
+                        label = { Text(stringResource(R.string.remotes_form_type_search_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -998,7 +1001,7 @@ fun RemoteFormDialog(
                     val advancedOptions = selectedProvider.options.filter { it.advanced && it.name != "name" && it.name != "type" }
 
                     Text(
-                        text = "基础配置",
+                        text = stringResource(R.string.remotes_sec_basic_config),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -1033,7 +1036,7 @@ fun RemoteFormDialog(
                                 contentDescription = null
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(if (showAdvanced) "收起高级选项 (${advancedOptions.size} 项)" else "展开高级选项 (${advancedOptions.size} 项)")
+                            Text(if (showAdvanced) stringResource(R.string.remotes_btn_collapse_advanced, advancedOptions.size) else stringResource(R.string.remotes_btn_expand_advanced, advancedOptions.size))
                         }
 
                         if (showAdvanced) {
@@ -1058,7 +1061,7 @@ fun RemoteFormDialog(
                     }
                 } else {
                     Text(
-                        text = "通用配置",
+                        text = stringResource(R.string.remotes_sec_general_config),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -1070,13 +1073,13 @@ fun RemoteFormDialog(
                             optionErrors.remove("url")
                             invalidateTestState()
                         },
-                        label = { Text("服务器地址 / URL (例如 https://dav.example.com) *") },
+                        label = { Text(stringResource(R.string.remotes_field_url)) },
                         isError = optionErrors["url"] != null,
                         supportingText = {
                             if (optionErrors["url"] != null) {
                                 Text(optionErrors["url"]!!, color = MaterialTheme.colorScheme.error)
                             } else {
-                                Text("WebDAV 根路径 URL")
+                                Text(stringResource(R.string.remotes_field_url_hint))
                             }
                         },
                         singleLine = true,
@@ -1091,7 +1094,7 @@ fun RemoteFormDialog(
                             optionValues["access_key"] = it
                             invalidateTestState()
                         },
-                        label = { Text("用户名 / Access Key") },
+                        label = { Text(stringResource(R.string.remotes_field_user)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1103,12 +1106,12 @@ fun RemoteFormDialog(
                             optionValues["secret"] = it
                             invalidateTestState()
                         },
-                        label = { Text("密码 / Secret Key (掩码保护)") },
+                        label = { Text(stringResource(R.string.remotes_field_pass)) },
                         placeholder = if (isPassConfigured) {
-                            { Text("已配置密码 (留空保持不变，输入可修改)") }
+                            { Text(stringResource(R.string.remotes_field_pass_placeholder)) }
                         } else null,
                         supportingText = if (isPassConfigured) {
-                            { Text("已配置密码凭据。若不修改请留空；输入新密码将覆盖旧密码。", color = MaterialTheme.colorScheme.primary) }
+                            { Text(stringResource(R.string.remotes_field_pass_configured_hint), color = MaterialTheme.colorScheme.primary) }
                         } else null,
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
@@ -1120,7 +1123,7 @@ fun RemoteFormDialog(
                             optionValues["vendor"] = it
                             invalidateTestState()
                         },
-                        label = { Text("提供商 (WebDAV 默认填写 other)") },
+                        label = { Text(stringResource(R.string.remotes_field_vendor)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1140,9 +1143,9 @@ fun RemoteFormDialog(
                     if (testState == RemoteTestState.TESTING) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(6.dp))
-                        Text("测试中…")
+                        Text(stringResource(R.string.remotes_btn_testing))
                     } else {
-                        Text(if (testState == RemoteTestState.SUCCESS) "重新测试" else "测试连接")
+                        Text(if (testState == RemoteTestState.SUCCESS) stringResource(R.string.remotes_btn_retest) else stringResource(R.string.remotes_btn_test))
                     }
                 }
                 Button(
@@ -1153,7 +1156,7 @@ fun RemoteFormDialog(
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                         Spacer(Modifier.width(6.dp))
                     }
-                    Text(if (!isEditing && testState != RemoteTestState.SUCCESS) "测试并保存" else "保存")
+                    Text(if (!isEditing && testState != RemoteTestState.SUCCESS) stringResource(R.string.remotes_btn_test_and_save) else stringResource(R.string.action_save))
                 }
             }
         },
@@ -1162,7 +1165,7 @@ fun RemoteFormDialog(
                 onClick = onDismiss,
                 enabled = testState != RemoteTestState.TESTING && !isSubmitting
             ) {
-                Text("取消")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )
@@ -1244,14 +1247,14 @@ private fun RenderOptionField(
                 onValueChange = onValueChange,
                 label = { Text("${opt.name}${if (opt.required && !isConfiguredSecret) " *" else ""}") },
                 placeholder = if (isConfiguredSecret) {
-                    { Text("已配置密码 (留空保持不变，输入可修改)") }
+                    { Text(stringResource(R.string.remotes_field_pass_placeholder)) }
                 } else null,
                 isError = errorMessage != null,
                 supportingText = {
                     if (errorMessage != null) {
                         Text(errorMessage, color = MaterialTheme.colorScheme.error)
                     } else if (isConfiguredSecret) {
-                        Text("已配置密码凭据。若不修改请留空；输入新密码将覆盖旧密码。", color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.remotes_field_pass_configured_hint), color = MaterialTheme.colorScheme.primary)
                     } else {
                         val helpText = opt.help.take(80) + if (opt.help.length > 80) "…" else ""
                         if (helpText.isNotBlank()) Text(helpText)
@@ -1263,7 +1266,7 @@ private fun RenderOptionField(
                     IconButton(onClick = onTogglePassword) {
                         Icon(
                             if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (isPasswordVisible) "隐藏密码" else "显示明文"
+                            contentDescription = if (isPasswordVisible) stringResource(R.string.remotes_hide_password) else stringResource(R.string.remotes_show_password)
                         )
                     }
                 },
@@ -1342,7 +1345,7 @@ pass = mypassword
             configText = pendingQrCode
             dialogError = null
             onClearPendingQrCode()
-            onShowMessage("已成功解析二维码配置！")
+            onShowMessage(context.getString(R.string.remotes_msg_qr_parsed))
         }
     }
 
@@ -1350,7 +1353,7 @@ pass = mypassword
         onDismissRequest = {
             if (!isSubmitting) onDismiss()
         },
-        title = { Text("导入 rclone.conf 配置", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.remotes_import_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -1385,7 +1388,7 @@ pass = mypassword
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "关闭",
+                                    contentDescription = stringResource(R.string.action_close),
                                     tint = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -1395,7 +1398,7 @@ pass = mypassword
                 }
 
                 Text(
-                    text = "在此粘贴原生 rclone.conf INI 格式配置，或通过相册图片识别配置二维码。系统将自动解析区块并加密敏感凭据入库。",
+                    text = stringResource(R.string.remotes_import_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1411,7 +1414,7 @@ pass = mypassword
                     ) {
                         Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("识别二维码")
+                        Text(stringResource(R.string.remotes_import_btn_scan_qr))
                     }
 
                     OutlinedButton(
@@ -1423,9 +1426,9 @@ pass = mypassword
                                 if (!text.isNullOrBlank()) {
                                     configText = text
                                     dialogError = null
-                                    onShowMessage("已从剪贴板粘贴")
+                                    onShowMessage(context.getString(R.string.remotes_import_clipboard_pasted))
                                 } else {
-                                    dialogError = "剪贴板内容为空"
+                                    dialogError = context.getString(R.string.remotes_import_clipboard_empty)
                                 }
                             }
                         },
@@ -1434,7 +1437,7 @@ pass = mypassword
                     ) {
                         Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("粘贴剪贴板")
+                        Text(stringResource(R.string.remotes_import_btn_paste))
                     }
                 }
 
@@ -1457,7 +1460,7 @@ pass = mypassword
             Button(
                 onClick = {
                     if (configText.isBlank()) {
-                        dialogError = "配置内容不能为空"
+                        dialogError = context.getString(R.string.remotes_import_err_empty)
                         return@Button
                     }
                     isSubmitting = true
@@ -1476,11 +1479,11 @@ pass = mypassword
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                     Spacer(Modifier.width(6.dp))
                 }
-                Text("导入并保存")
+                Text(stringResource(R.string.remotes_import_btn_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSubmitting) { Text("取消") }
+            TextButton(onClick = onDismiss, enabled = !isSubmitting) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }
@@ -1517,9 +1520,9 @@ fun RemoteExportDialog(
         onDismissRequest = onDismiss,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("导出与分享: ${data.name}", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.remotes_export_title, data.name), fontWeight = FontWeight.Bold)
                 Text(
-                    text = "支持 rclone.conf 标准片段、JSON 配置及二维码，可便捷跨机互传或分享备份。",
+                    text = stringResource(R.string.remotes_export_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1538,17 +1541,17 @@ fun RemoteExportDialog(
                     FilterChip(
                         selected = isFullMode,
                         onClick = { isFullMode = true },
-                        label = { Text("完整备份 (含密文)") }
+                        label = { Text(stringResource(R.string.remotes_export_mode_full)) }
                     )
                     FilterChip(
                         selected = !isFullMode,
                         onClick = { isFullMode = false },
-                        label = { Text("安全脱敏 (公开)") }
+                        label = { Text(stringResource(R.string.remotes_export_mode_masked)) }
                     )
                 }
 
                 // 格式 Tab
-                val formats = listOf("rclone.conf", "JSON", "二维码")
+                val formats = listOf("rclone.conf", "JSON", stringResource(R.string.remotes_export_format_qr))
                 ScrollableTabRow(
                     selectedTabIndex = selectedFormat,
                     edgePadding = 0.dp,
@@ -1575,20 +1578,20 @@ fun RemoteExportDialog(
                         if (qrBitmap != null) {
                             Image(
                                 bitmap = qrBitmap.asImageBitmap(),
-                                contentDescription = "配置二维码",
+                                contentDescription = stringResource(R.string.remotes_export_qr_alt),
                                 modifier = Modifier
                                     .size(200.dp)
                                     .padding(4.dp)
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = "使用另一设备扫描此二维码即可一键导入",
+                                text = stringResource(R.string.remotes_export_qr_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
                             Text(
-                                text = "配置内容过长，无法生成标准二维码，请使用复制或分享文本",
+                                text = stringResource(R.string.remotes_export_qr_too_long),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -1617,13 +1620,13 @@ fun RemoteExportDialog(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("rclone-config", currentContent))
-                        onShowMessage("已复制到剪贴板")
+                        onShowMessage(context.getString(R.string.remotes_export_copied))
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("复制")
+                    Text(stringResource(R.string.action_copy))
                 }
 
                 // 系统原生分享按钮
@@ -1634,13 +1637,13 @@ fun RemoteExportDialog(
                             putExtra(Intent.EXTRA_TEXT, currentContent)
                             type = "text/plain"
                         }
-                        context.startActivity(Intent.createChooser(sendIntent, "分享远端配置: ${data.name}"))
+                        context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.remotes_export_share_title, data.name)))
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("分享")
+                    Text(stringResource(R.string.remotes_export_btn_share))
                 }
 
                 // 保存文件按钮
@@ -1653,12 +1656,12 @@ fun RemoteExportDialog(
                 ) {
                     Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("保存")
+                    Text(stringResource(R.string.action_save))
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
         }
     )
 }

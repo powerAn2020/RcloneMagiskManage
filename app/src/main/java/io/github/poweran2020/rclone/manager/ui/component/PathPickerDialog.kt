@@ -60,12 +60,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.poweran2020.rclone.manager.GatewayClient
+import io.github.poweran2020.rclone.manager.R
 import io.github.poweran2020.rclone.manager.data.model.FileItem
 import io.github.poweran2020.rclone.manager.data.model.LocalFileItem
 import io.github.poweran2020.rclone.manager.data.model.RemoteItem
@@ -101,7 +103,7 @@ fun RclonePathPickerField(
             IconButton(onClick = { showPickerDialog = true }) {
                 Icon(
                     imageVector = Icons.Default.FolderOpen,
-                    contentDescription = "浏览选择路径",
+                    contentDescription = stringResource(R.string.mount_cd_pick_local),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -111,7 +113,7 @@ fun RclonePathPickerField(
 
     if (showPickerDialog) {
         PathPickerDialog(
-            title = "选择 $label",
+            title = stringResource(R.string.path_picker_title_format, label),
             initialPath = value.text,
             remotes = remotes,
             client = client,
@@ -245,13 +247,13 @@ fun PathPickerDialog(
                     Tab(
                         selected = mode == 0,
                         onClick = { mode = 0 },
-                        text = { Text("远端存储 (Remote)") },
+                        text = { Text(stringResource(R.string.path_picker_tab_remote)) },
                         icon = { Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                     Tab(
                         selected = mode == 1,
                         onClick = { mode = 1 },
-                        text = { Text("本地存储 (Local)") },
+                        text = { Text(stringResource(R.string.path_picker_tab_local)) },
                         icon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                 }
@@ -265,7 +267,7 @@ fun PathPickerDialog(
                                 .height(180.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("未检测到已配置的远端，请在“远端”页添加配置或切至本地存储", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.path_picker_no_remotes), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else {
                         // Remote Dropdown
@@ -276,10 +278,10 @@ fun PathPickerDialog(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             OutlinedTextField(
-                                value = selectedRemote?.let { "${it.name} (${it.type})" } ?: "选择远端",
+                                value = selectedRemote?.let { "${it.name} (${it.type})" } ?: stringResource(R.string.path_picker_select_remote),
                                 onValueChange = {},
                                 readOnly = true,
-                                label = { Text("选择远端") },
+                                label = { Text(stringResource(R.string.path_picker_select_remote)) },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -326,7 +328,7 @@ fun PathPickerDialog(
                                     enabled = !isRoot,
                                     modifier = Modifier.size(32.dp)
                                 ) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一级", modifier = Modifier.size(18.dp))
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.path_picker_cd_up), modifier = Modifier.size(18.dp))
                                 }
                                 Spacer(Modifier.width(4.dp))
 
@@ -342,7 +344,7 @@ fun PathPickerDialog(
                                     FilterChip(
                                         selected = currentRemotePath == "/" && selectedRemoteItem == null,
                                         onClick = { selectedRemote?.let { loadRemoteDir(it, "/") } },
-                                        label = { Text("根目录 /", style = MaterialTheme.typography.labelSmall) }
+                                        label = { Text(stringResource(R.string.path_picker_root_dir), style = MaterialTheme.typography.labelSmall) }
                                     )
                                     var acc = ""
                                     segments.forEach { seg ->
@@ -363,7 +365,7 @@ fun PathPickerDialog(
                                     onClick = { selectedRemote?.let { loadRemoteDir(it, currentRemotePath) } },
                                     modifier = Modifier.size(32.dp)
                                 ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "刷新", modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh), modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
@@ -381,7 +383,7 @@ fun PathPickerDialog(
                                 }
                             } else if (remoteFiles.isEmpty()) {
                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text("此目录为空", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                    Text(stringResource(R.string.path_picker_empty), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                                 }
                             } else {
                                 LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -456,8 +458,8 @@ fun PathPickerDialog(
                             "Download" to "/data/media/0/Download",
                             "Documents" to "/data/media/0/Documents",
                             "DCIM" to "/data/media/0/DCIM",
-                            "内部存储" to "/data/media/0",
-                            "根目录" to "/"
+                            stringResource(R.string.path_picker_internal_storage) to "/data/media/0",
+                            stringResource(R.string.path_picker_root_storage) to "/"
                         )
                         shortcuts.forEach { (lbl, path) ->
                             FilterChip(
@@ -489,7 +491,7 @@ fun PathPickerDialog(
                                 enabled = !isRoot,
                                 modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一级", modifier = Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.path_picker_cd_up), modifier = Modifier.size(18.dp))
                             }
                             Spacer(Modifier.width(4.dp))
                             Text(
@@ -504,7 +506,7 @@ fun PathPickerDialog(
                                 onClick = { loadLocalDir(currentLocalDir) },
                                 modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "刷新", modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh), modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -522,7 +524,7 @@ fun PathPickerDialog(
                             }
                         } else if (localFiles.isEmpty()) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("目录为空或无读取权限", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                Text(stringResource(R.string.path_picker_empty_or_no_perm), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                             }
                         } else {
                             LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -602,7 +604,7 @@ fun PathPickerDialog(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "已选: $resolvedPath",
+                            text = stringResource(R.string.path_picker_selected_prefix, resolvedPath),
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Medium,
@@ -621,11 +623,11 @@ fun PathPickerDialog(
                     }
                 }
             ) {
-                Text("确定选择")
+                Text(stringResource(R.string.action_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

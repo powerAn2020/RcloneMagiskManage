@@ -80,6 +80,7 @@ import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
 import io.github.poweran2020.rclone.manager.ui.component.TogglePreference
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import io.github.poweran2020.rclone.manager.R
 import io.github.poweran2020.rclone.manager.data.AppLanguage
@@ -96,6 +97,7 @@ fun SettingsScreen(
     onEditToken: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isSafeMode by remember { mutableStateOf(false) }
     var systemInfo by remember { mutableStateOf<SystemInfoItem?>(null) }
@@ -199,21 +201,28 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SectionTitle(text = stringResource(R.string.settings_cat_language))
                     Text(
-                        text = "选择应用界面展示语言 / Select display language",
+                        text = stringResource(R.string.settings_lang_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         AppLanguage.values().forEach { lang ->
                             FilterChip(
                                 selected = appLanguage == lang,
                                 onClick = { onAppLanguageChanged(lang) },
-                                label = { Text(stringResource(lang.titleResId), style = MaterialTheme.typography.bodySmall) }
+                                modifier = Modifier.weight(1f),
+                                label = {
+                                    Text(
+                                        stringResource(lang.titleResId),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
                             )
                         }
                     }
@@ -222,30 +231,36 @@ fun SettingsScreen(
         }
 
         item {
-            SectionTitle(text = "系统与服务信息")
+            SectionTitle(text = stringResource(R.string.settings_sys_info_title))
         }
 
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
                 systemInfo?.let { info ->
-                    InfoRow(label = "服务标识", value = info.service)
-                    InfoRow(label = "rclone 核心版本", value = info.rcloneVersion)
-                    InfoRow(label = "Root Gateway 版本", value = info.gatewayVersion)
-                    InfoRow(label = "API 合约版本", value = info.apiVersion)
-                    InfoRow(label = "Root 运行状态", value = if (info.root) "已授权 (Root)" else "非 Root 模式")
+                    InfoRow(label = stringResource(R.string.settings_srv_id), value = info.service)
+                    InfoRow(label = stringResource(R.string.settings_rclone_ver), value = info.rcloneVersion)
+                    InfoRow(label = stringResource(R.string.settings_gateway_ver), value = info.gatewayVersion)
+                    InfoRow(label = stringResource(R.string.settings_api_ver), value = info.apiVersion)
                     InfoRow(
-                        label = "局域网 (LAN) 监听",
-                        value = if (info.lanEnabled) "已启用 (TLS)" else "未启用 (仅本地 IPC)"
+                        label = stringResource(R.string.settings_root_status),
+                        value = if (info.root) stringResource(R.string.settings_root_authorized) else stringResource(R.string.settings_root_unauthorized)
                     )
-                    InfoRow(label = "双向证书认证 (mTLS)", value = if (info.mtlsRequired) "强制启用" else "禁用")
+                    InfoRow(
+                        label = stringResource(R.string.settings_lan_listen),
+                        value = if (info.lanEnabled) stringResource(R.string.settings_lan_enabled_tls) else stringResource(R.string.settings_lan_disabled_ipc)
+                    )
+                    InfoRow(
+                        label = stringResource(R.string.settings_mtls),
+                        value = if (info.mtlsRequired) stringResource(R.string.settings_mtls_required) else stringResource(R.string.settings_mtls_disabled)
+                    )
                 } ?: run {
-                    Text("正在连接并读取网关环境…", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.settings_connecting_gateway), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
 
         item {
-            SectionTitle(text = "安全模式")
+            SectionTitle(text = stringResource(R.string.settings_safe_mode_title))
         }
 
         item {
@@ -257,12 +272,12 @@ fun SettingsScreen(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Safe Mode (安全模式)",
+                            stringResource(R.string.settings_safe_mode_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (isSafeMode) "已进入安全模式！所有调度任务暂停，挂载停止。" else "正常运行模式，计划任务与开机恢复正常生效。",
+                            text = if (isSafeMode) stringResource(R.string.settings_safe_mode_active) else stringResource(R.string.settings_safe_mode_normal),
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isSafeMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -277,9 +292,9 @@ fun SettingsScreen(
                                     client.setSafeMode(false, bearer).fold(
                                         onSuccess = {
                                             isSafeMode = false
-                                            onShowMessage("已退出安全模式")
+                                            onShowMessage(context.getString(R.string.settings_msg_safe_mode_exited))
                                         },
-                                        onFailure = { onShowMessage("退出失败: ${it.message}") }
+                                        onFailure = { onShowMessage(context.getString(R.string.settings_msg_exit_failed, it.message ?: "")) }
                                     )
                                 }
                             }
@@ -290,7 +305,7 @@ fun SettingsScreen(
         }
 
         item {
-            SectionTitle(text = "Gateway 运行时参数调优")
+            SectionTitle(text = stringResource(R.string.settings_section_runtime_tuning))
         }
 
         item {
@@ -298,22 +313,22 @@ fun SettingsScreen(
                 MaterialTextField(
                     value = logRetentionDays,
                     onValueChange = { logRetentionDays = it },
-                    label = "日志保留天数 (1..365 天)"
+                    label = stringResource(R.string.settings_label_log_retention)
                 )
                 MaterialTextField(
                     value = logMaxBytes,
                     onValueChange = { logMaxBytes = it },
-                    label = "单个日志轮转阈值 (字节，如 10485760)"
+                    label = stringResource(R.string.settings_label_log_max_bytes)
                 )
                 MaterialTextField(
                     value = cacheMaxBytes,
                     onValueChange = { cacheMaxBytes = it },
-                    label = "挂载缓存容量上限 (字节，如 34359738368)"
+                    label = stringResource(R.string.settings_label_cache_max_bytes)
                 )
                 MaterialTextField(
                     value = maxConcurrentJobs,
                     onValueChange = { maxConcurrentJobs = it },
-                    label = "全局最大并发任务数 (1..4)"
+                    label = stringResource(R.string.settings_label_max_concurrent_jobs)
                 )
 
                 Spacer(Modifier.height(4.dp))
@@ -327,14 +342,14 @@ fun SettingsScreen(
                         }
                         scope.launch {
                             client.updateSettings(json, bearer).fold(
-                                onSuccess = { onShowMessage("运行时设置已更新") },
-                                onFailure = { onShowMessage("保存设置失败: ${it.message}") }
+                                onSuccess = { onShowMessage(context.getString(R.string.settings_msg_runtime_updated)) },
+                                onFailure = { onShowMessage(context.getString(R.string.settings_msg_save_failed, it.message ?: "")) }
                             )
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("保存设置")
+                    Text(stringResource(R.string.settings_btn_save_settings))
                 }
             }
         }
@@ -342,7 +357,7 @@ fun SettingsScreen(
         item {
             ContentCard(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionTitle(text = "模块卸载与数据保护")
+                    SectionTitle(text = stringResource(R.string.settings_section_uninstall_protection))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -350,13 +365,13 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "卸载模块时保留数据",
+                                text = stringResource(R.string.settings_keep_on_uninstall_title),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "在数据目录创建 KEEP_ON_UNINSTALL，卸载 Magisk/KernelSU 模块时跳过删除数据目录",
+                                text = stringResource(R.string.settings_keep_on_uninstall_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -371,10 +386,10 @@ fun SettingsScreen(
                                     client.setKeepOnUninstallEnabled(checked)
                                         .onSuccess {
                                             keepOnUninstall = checked
-                                            onShowMessage(if (checked) "已开启：卸载模块时保留数据" else "已关闭：卸载模块时将清除数据")
+                                            onShowMessage(if (checked) context.getString(R.string.settings_keep_enabled) else context.getString(R.string.settings_keep_disabled))
                                         }
                                         .onFailure {
-                                            onShowMessage("设置失败: ${it.message}")
+                                            onShowMessage(it.message ?: "")
                                         }
                                     isUpdatingKeepState = false
                                 }
@@ -386,7 +401,7 @@ fun SettingsScreen(
         }
 
         item {
-            SectionTitle(text = "数据库状态与备份 (${backups.size})")
+            SectionTitle(text = stringResource(R.string.settings_section_database_backups, backups.size))
         }
 
         item {
@@ -398,12 +413,12 @@ fun SettingsScreen(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "SQLite WAL 状态备份",
+                            stringResource(R.string.settings_db_backup_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "支持数据库快照热备份与前置保护还原。",
+                            stringResource(R.string.settings_db_backup_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -413,23 +428,23 @@ fun SettingsScreen(
                             scope.launch {
                                 client.createBackup(bearer).fold(
                                     onSuccess = {
-                                        onShowMessage("备份已成功创建")
+                                        onShowMessage(context.getString(R.string.settings_msg_backup_created))
                                         client.backups(bearer).onSuccess { backups = parseBackups(it) }
                                     },
-                                    onFailure = { onShowMessage("创建备份失败: ${it.message}") }
+                                    onFailure = { onShowMessage(context.getString(R.string.settings_msg_backup_failed, it.message ?: "")) }
                                 )
                             }
                         }
                     ) {
                         Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("立即备份")
+                        Text(stringResource(R.string.settings_btn_backup_now))
                     }
                 }
 
                 if (backups.isEmpty()) {
                     Text(
-                        "暂无备份文件。",
+                        stringResource(R.string.settings_no_backups),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -450,7 +465,7 @@ fun SettingsScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(b.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                             if (b.bundle) {
-                                                StatusBadge(status = "带密钥")
+                                                StatusBadge(status = stringResource(R.string.settings_badge_bundle))
                                             }
                                         }
                                         Spacer(Modifier.height(2.dp))
@@ -465,14 +480,14 @@ fun SettingsScreen(
                                             onClick = { backupToRestore = b },
                                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                         ) {
-                                            Text("还原", style = MaterialTheme.typography.bodySmall)
+                                            Text(stringResource(R.string.settings_btn_restore), style = MaterialTheme.typography.bodySmall)
                                         }
                                         Button(
                                             onClick = { backupToDelete = b },
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                         ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "删除", modifier = Modifier.size(14.dp))
+                                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_delete), modifier = Modifier.size(14.dp))
                                         }
                                     }
                                 }
@@ -483,7 +498,7 @@ fun SettingsScreen(
                                 onClick = { showAllBackups = !showAllBackups },
                                 modifier = Modifier.align(Alignment.CenterHorizontally)
                             ) {
-                                Text(if (showAllBackups) "收起多余备份" else "查看全部备份 (${backups.size})")
+                                Text(if (showAllBackups) stringResource(R.string.settings_collapse_backups) else stringResource(R.string.settings_view_all_backups, backups.size))
                             }
                         }
                     }
@@ -492,7 +507,7 @@ fun SettingsScreen(
         }
 
         item {
-            SectionTitle(text = "历史配置迁移")
+            SectionTitle(text = stringResource(R.string.settings_section_legacy_migration))
         }
 
         item {
@@ -504,35 +519,35 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "旧版 Magisk 模块历史配置",
+                            stringResource(R.string.settings_legacy_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         migration?.let { m ->
                             StatusBadge(
-                                status = if (m.alreadyMigrated) "已迁移完成" else if (!m.detectedLegacyPath.isNullOrEmpty()) "发现待迁移配置" else "未检测到配置"
+                                status = if (m.alreadyMigrated) stringResource(R.string.settings_status_migrated) else if (!m.detectedLegacyPath.isNullOrEmpty()) stringResource(R.string.settings_status_migration_pending) else stringResource(R.string.settings_status_migration_none)
                             )
                         }
                     }
 
                     migration?.let { m ->
                         InfoRow(
-                            label = "自动探测路径",
-                            value = m.detectedLegacyPath ?: "未在常见模块目录找到配置"
+                            label = stringResource(R.string.settings_label_detected_path),
+                            value = m.detectedLegacyPath ?: stringResource(R.string.settings_no_detected_path)
                         )
-                        InfoRow(label = "成功转换任务数", value = "${m.migratedJobs} 个")
-                        InfoRow(label = "解析异常/忽略记录", value = "${m.errorCount} 条")
+                        InfoRow(label = stringResource(R.string.settings_label_migrated_jobs), value = "${m.migratedJobs}")
+                        InfoRow(label = stringResource(R.string.settings_label_migration_errors), value = "${m.errorCount}")
 
                         OutlinedTextField(
                             value = legacyPathInput,
                             onValueChange = { legacyPathInput = it },
-                            label = { Text("旧模块目录 (包含 rclone.conf / sync / copy)") },
+                            label = { Text(stringResource(R.string.settings_legacy_path_label)) },
                             modifier = Modifier.fillMaxWidth(),
                             trailingIcon = {
                                 IconButton(onClick = { showLegacyPathPicker = true }) {
                                     Icon(
                                         Icons.Default.FolderOpen,
-                                        contentDescription = "浏览选择本地目录",
+                                        contentDescription = stringResource(R.string.settings_choose_legacy_dir),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
@@ -541,7 +556,7 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(12.dp)
                         )
 
-                        Text("常见旧模块路径预设:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.settings_legacy_presets_label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -555,13 +570,13 @@ fun SettingsScreen(
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     modifier = Modifier.height(32.dp)
                                 ) {
-                                    Text("探测目录: $detected", style = MaterialTheme.typography.bodySmall)
+                                    Text(stringResource(R.string.settings_preset_detected, detected), style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                             val presets = listOf(
-                                "/data/adb/modules/rclone" to "标准 rclone 模块",
-                                "/data/adb/modules" to "Magisk 模块目录",
-                                "/data/local/tmp/legacy_test" to "测试目录"
+                                "/data/adb/modules/rclone" to stringResource(R.string.settings_preset_standard_module),
+                                "/data/adb/modules" to stringResource(R.string.settings_preset_magisk_dir),
+                                "/data/local/tmp/legacy_test" to stringResource(R.string.settings_preset_test_dir)
                             )
                             presets.forEach { (path, label) ->
                                 OutlinedButton(
@@ -584,10 +599,10 @@ fun SettingsScreen(
                                     scope.launch {
                                         client.runMigration(legacyPathInput.text.trim().ifEmpty { null }, bearer).fold(
                                             onSuccess = {
-                                                onShowMessage("历史配置已成功迁移导入")
+                                                onShowMessage(context.getString(R.string.settings_msg_migration_success))
                                                 loadAllSettings()
                                             },
-                                            onFailure = { onShowMessage("迁移失败: ${it.message}") }
+                                            onFailure = { onShowMessage(context.getString(R.string.settings_msg_migration_failed, it.message ?: "")) }
                                         )
                                         isMigrating = false
                                     }
@@ -595,7 +610,7 @@ fun SettingsScreen(
                                 enabled = !isMigrating && legacyPathInput.text.isNotBlank(),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text(if (isMigrating) "正在迁移…" else if (m.alreadyMigrated) "重新/增量迁移" else "开始配置迁移")
+                                Text(if (isMigrating) stringResource(R.string.settings_btn_migrating) else if (m.alreadyMigrated) stringResource(R.string.settings_btn_remigrate) else stringResource(R.string.settings_btn_start_migration))
                             }
 
                             if (m.errors.isNotEmpty()) {
@@ -603,19 +618,19 @@ fun SettingsScreen(
                                     onClick = { showMigrationErrorsDialog = true },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("查看异常 (${m.errors.size})")
+                                    Text(stringResource(R.string.settings_btn_view_errors, m.errors.size))
                                 }
                             }
                         }
                     } ?: run {
-                        Text("正在查询配置迁移状态…", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.settings_migration_querying), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         }
 
         item {
-            SectionTitle(text = "日志管理与安全审计")
+            SectionTitle(text = stringResource(R.string.settings_section_logs_audit))
         }
 
         item {
@@ -624,12 +639,12 @@ fun SettingsScreen(
                     // 1. 核心运行日志
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            "核心运行日志 (gateway.log)",
+                            stringResource(R.string.settings_gateway_log_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "守护进程启动、挂载指令执行、看门狗探针与底层运行时输出。",
+                            stringResource(R.string.settings_gateway_log_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -639,7 +654,7 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("查看核心运行日志")
+                            Text(stringResource(R.string.action_view_core_log))
                         }
                     }
 
@@ -650,12 +665,12 @@ fun SettingsScreen(
                     // 2. 安全审计日志与清理
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            "Root 操作与安全审计",
+                            stringResource(R.string.settings_audit_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "全链路操作事件已记录，敏感文件名经由 SHA-256 哈希脱敏。",
+                            stringResource(R.string.settings_audit_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -671,13 +686,13 @@ fun SettingsScreen(
                                                 auditLogs = parseAuditLogs(it)
                                                 showAuditDialog = true
                                             },
-                                            onFailure = { onShowMessage("获取审计日志失败: ${it.message}") }
+                                            onFailure = { onShowMessage(it.message ?: "") }
                                         )
                                     }
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("查看审计日志")
+                                Text(stringResource(R.string.settings_btn_view_audit))
                             }
                             Button(
                                 onClick = { showClearLogsDialog = true },
@@ -686,7 +701,7 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("清理所有日志")
+                                Text(stringResource(R.string.settings_btn_clear_logs))
                             }
                         }
                     }
@@ -699,9 +714,9 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showSafeModeWarning = false },
             icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("确认进入 Safe Mode？", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.settings_safe_mode_dialog_title), fontWeight = FontWeight.Bold) },
             text = {
-                Text("进入 Safe Mode 后，所有计划中的任务将停止启动，已运行的 Mount worker 将被安全回收。此操作用于紧急排障或设备异常修复。")
+                Text(stringResource(R.string.settings_safe_mode_dialog_desc))
             },
             confirmButton = {
                 Button(
@@ -710,20 +725,20 @@ fun SettingsScreen(
                             client.setSafeMode(true, bearer).fold(
                                 onSuccess = {
                                     isSafeMode = true
-                                    onShowMessage("已开启安全模式")
+                                    onShowMessage(context.getString(R.string.settings_msg_save_failed, ""))
                                     showSafeModeWarning = false
                                 },
-                                onFailure = { onShowMessage("开启安全模式失败: ${it.message}") }
+                                onFailure = { onShowMessage(it.message ?: "") }
                             )
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("确认开启")
+                    Text(stringResource(R.string.settings_btn_confirm_enable))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showSafeModeWarning = false }) { Text("取消") }
+                TextButton(onClick = { showSafeModeWarning = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -731,10 +746,10 @@ fun SettingsScreen(
     if (showAuditDialog) {
         AlertDialog(
             onDismissRequest = { showAuditDialog = false },
-            title = { Text("审计事件日志 (最近 ${auditLogs.size} 条)", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.settings_audit_dialog_title, auditLogs.size), fontWeight = FontWeight.Bold) },
             text = {
                 if (auditLogs.isEmpty()) {
-                    Text("暂无审计事件。")
+                    Text(stringResource(R.string.settings_no_audit_events))
                 } else {
                     LazyColumn(
                         modifier = Modifier.height(360.dp),
@@ -755,14 +770,14 @@ fun SettingsScreen(
                                     StatusBadge(status = log.result)
                                 }
                                 Text(
-                                    "时间: ${formatEpochTime(log.timestamp)}",
+                                    stringResource(R.string.settings_audit_time, formatEpochTime(log.timestamp)),
                                     style = MaterialTheme.typography.bodySmall
                                 )
-                                log.clientId?.let { Text("客户端: $it", style = MaterialTheme.typography.bodySmall) }
-                                log.latencyMs?.let { Text("耗时: ${it}ms", style = MaterialTheme.typography.bodySmall) }
+                                log.clientId?.let { Text(stringResource(R.string.settings_audit_client, it), style = MaterialTheme.typography.bodySmall) }
+                                log.latencyMs?.let { Text(stringResource(R.string.settings_audit_latency, it), style = MaterialTheme.typography.bodySmall) }
                                 log.pathHash?.let {
                                     Text(
-                                        "路径 Hash: ${it.take(16)}…",
+                                        stringResource(R.string.settings_audit_path_hash, it.take(16)),
                                         style = MaterialTheme.typography.bodySmall,
                                         fontFamily = FontFamily.Monospace
                                     )
@@ -773,7 +788,7 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showAuditDialog = false }) { Text("关闭") }
+                TextButton(onClick = { showAuditDialog = false }) { Text(stringResource(R.string.action_close)) }
             },
             dismissButton = {
                 TextButton(
@@ -782,7 +797,7 @@ fun SettingsScreen(
                         showClearLogsDialog = true
                     }
                 ) {
-                    Text("清理日志", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.settings_btn_clear_logs_short), color = MaterialTheme.colorScheme.error)
                 }
             }
         )
@@ -792,9 +807,9 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { if (!isClearingLogs) showClearLogsDialog = false },
             icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("确认清理所有日志？", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.settings_clear_logs_dialog_title), fontWeight = FontWeight.Bold) },
             text = {
-                Text("此操作将截断清空网关运行日志（gateway.log、job-*.log 等）并清空历史安全审计事件记录，释放存储空间。该操作不可撤销。")
+                Text(stringResource(R.string.settings_clear_logs_dialog_desc))
             },
             confirmButton = {
                 Button(
@@ -809,11 +824,11 @@ fun SettingsScreen(
                                     val files = obj?.optInt("filesCleared", 0) ?: 0
                                     val audit = obj?.optInt("auditRecordsCleared", 0) ?: 0
                                     auditLogs = emptyList()
-                                    onShowMessage("日志清理完成：已清理 $files 个日志文件，清除 $audit 条审计记录")
+                                    onShowMessage(context.getString(R.string.settings_msg_logs_cleared, files, audit))
                                 },
                                 onFailure = { err ->
                                     isClearingLogs = false
-                                    onShowMessage("清理日志失败: ${err.message}")
+                                    onShowMessage(err.message ?: "")
                                 }
                             )
                         }
@@ -821,7 +836,7 @@ fun SettingsScreen(
                     enabled = !isClearingLogs,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text(if (isClearingLogs) "正在清理…" else "确认清理")
+                    Text(if (isClearingLogs) stringResource(R.string.settings_btn_clearing_logs) else stringResource(R.string.settings_btn_confirm_clear))
                 }
             },
             dismissButton = {
@@ -829,7 +844,7 @@ fun SettingsScreen(
                     onClick = { showClearLogsDialog = false },
                     enabled = !isClearingLogs
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -838,9 +853,9 @@ fun SettingsScreen(
     backupToRestore?.let { b ->
         DangerousConfirmDialog(
             show = true,
-            title = "确认还原数据库？",
-            message = "将使用备份 [${b.name}] 覆盖当前运行中的数据库及密钥配置。网关将自动创建 pre-restore 安全快照并重新载入连接。",
-            confirmLabel = "确认还原",
+            title = stringResource(R.string.settings_restore_dialog_title),
+            message = stringResource(R.string.settings_restore_dialog_desc, b.name),
+            confirmLabel = stringResource(R.string.settings_btn_confirm_restore),
             tokenBadge = "restore",
             showTokenValue = false,
             onDismiss = { backupToRestore = null },
@@ -850,10 +865,10 @@ fun SettingsScreen(
                 scope.launch {
                     client.restoreBackup(targetName, bearer).fold(
                         onSuccess = {
-                            onShowMessage("数据库已成功还原！已重新加载状态")
+                            onShowMessage(context.getString(R.string.settings_msg_restore_success))
                             loadAllSettings()
                         },
-                        onFailure = { onShowMessage("还原失败: ${it.message}") }
+                        onFailure = { onShowMessage(context.getString(R.string.settings_msg_restore_failed, it.message ?: "")) }
                     )
                 }
             }
@@ -861,11 +876,12 @@ fun SettingsScreen(
     }
 
     backupToDelete?.let { b ->
+        val bundleSuffix = if (b.bundle) stringResource(R.string.settings_bundle_suffix) else ""
         AlertDialog(
             onDismissRequest = { backupToDelete = null },
             icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("确认删除备份？", fontWeight = FontWeight.Bold) },
-            text = { Text("即将永久删除备份文件 [${b.name}]${if (b.bundle) " 及其私钥 Bundle 目录" else ""}，此操作无法撤销。") },
+            title = { Text(stringResource(R.string.settings_delete_backup_title), fontWeight = FontWeight.Bold) },
+            text = { Text(stringResource(R.string.settings_delete_backup_desc, b.name, bundleSuffix)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -874,21 +890,21 @@ fun SettingsScreen(
                         scope.launch {
                             client.deleteBackup(targetName, bearer).fold(
                                 onSuccess = {
-                                    onShowMessage("备份已删除")
+                                    onShowMessage(context.getString(R.string.settings_msg_backup_deleted))
                                     client.backups(bearer).onSuccess { backups = parseBackups(it) }
                                 },
-                                onFailure = { onShowMessage("删除失败: ${it.message}") }
+                                onFailure = { onShowMessage(it.message ?: "") }
                             )
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("确认删除")
+                    Text(stringResource(R.string.settings_btn_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { backupToDelete = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -898,7 +914,7 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showMigrationErrorsDialog = false },
             icon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text("配置迁移异常明细 (${migration?.errors?.size ?: 0})", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.settings_migration_errors_title, migration?.errors?.size ?: 0), fontWeight = FontWeight.Bold) },
             text = {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().height(260.dp),
@@ -909,15 +925,15 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             insideMargin = PaddingValues(10.dp)
                         ) {
-                            Text("文件: ${err.file}:${err.line}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                            Text("原因: ${err.message}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.settings_err_file_line, err.file, err.line), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.settings_err_reason, err.message), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
             },
             confirmButton = {
                 Button(onClick = { showMigrationErrorsDialog = false }) {
-                    Text("我知道了")
+                    Text(stringResource(R.string.settings_btn_got_it))
                 }
             }
         )
@@ -925,7 +941,7 @@ fun SettingsScreen(
 
     if (showLegacyPathPicker) {
         PathPickerDialog(
-            title = "选择旧模块配置目录",
+            title = stringResource(R.string.settings_choose_legacy_dir),
             initialPath = legacyPathInput.text.ifBlank { migration?.detectedLegacyPath ?: "/data/adb/modules" },
             remotes = emptyList(),
             client = client,

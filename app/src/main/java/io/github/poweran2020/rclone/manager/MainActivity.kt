@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -97,19 +98,23 @@ class MainActivity : ComponentActivity() {
                 .setTimeout(45)
         )
         appPreferences = AppPreferences(this)
+        val initialLang = appPreferences.getAppLanguage()
+        LocaleUtil.applyLocale(this, initialLang)
         themeModeState.value = appPreferences.getThemeMode()
-        appLanguageState.value = appPreferences.getAppLanguage()
+        appLanguageState.value = initialLang
         tokenStore = TokenStore(this)
         tokenState.value = tokenStore.read()
 
         checkRootPermission(initial = true)
 
         setContent {
-            val localizedContext = remember(appLanguageState.value) {
-                LocaleUtil.getLocalizedContext(this@MainActivity, appLanguageState.value)
+            val currentLanguage = appLanguageState.value
+            val localizedContext = remember(currentLanguage) {
+                LocaleUtil.getLocalizedContext(this@MainActivity, currentLanguage)
             }
             CompositionLocalProvider(
                 LocalContext provides localizedContext,
+                androidx.compose.ui.platform.LocalConfiguration provides localizedContext.resources.configuration,
                 androidx.activity.compose.LocalActivityResultRegistryOwner provides this@MainActivity
             ) {
                 RcloneTheme(themeMode = themeModeState.value) {
@@ -123,10 +128,14 @@ class MainActivity : ComponentActivity() {
                             themeModeState.value = newMode
                             appPreferences.setThemeMode(newMode)
                         },
-                        appLanguage = appLanguageState.value,
+                        appLanguage = currentLanguage,
                         onAppLanguageChanged = { newLang ->
-                            appLanguageState.value = newLang
-                            appPreferences.setAppLanguage(newLang)
+                            if (appLanguageState.value != newLang) {
+                                appLanguageState.value = newLang
+                                appPreferences.setAppLanguage(newLang)
+                                LocaleUtil.applyLocale(this@MainActivity, newLang)
+                                recreate()
+                            }
                         },
                         onRetryRoot = { checkRootPermission(forceRefresh = true) },
                         onOpenRootManager = { openRootManager() },
@@ -258,7 +267,15 @@ private fun RcloneApp(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
                         icon = { Icon(navIcons[index], contentDescription = label) },
-                        label = { Text(label) }
+                        label = {
+                            Text(
+                                text = label,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     )
                 }
             }

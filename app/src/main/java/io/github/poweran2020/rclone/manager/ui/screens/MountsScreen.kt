@@ -106,6 +106,7 @@ fun MountsScreen(
     onShowMessage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var mounts by remember { mutableStateOf<List<MountProfileItem>>(emptyList()) }
     var remotes by remember { mutableStateOf<List<RemoteItem>>(emptyList()) }
@@ -119,7 +120,7 @@ fun MountsScreen(
             isLoading = true
             client.mounts(bearer).fold(
                 onSuccess = { mounts = parseMounts(it) },
-                onFailure = { onShowMessage("加载挂载列表失败: ${it.message}") }
+                onFailure = { onShowMessage(context.getString(R.string.mount_msg_list_failed, it.message ?: "")) }
             )
             client.remotes(bearer).onSuccess { remotes = parseRemotes(it) }
             isLoading = false
@@ -148,15 +149,12 @@ fun MountsScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
                         onClick = { loadMounts() },
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.action_refresh), maxLines = 1, softWrap = false)
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh), modifier = Modifier.size(20.dp))
                     }
                     Button(
                         onClick = { showCreateDialog = true },
@@ -177,8 +175,8 @@ fun MountsScreen(
             item {
                 EmptyView(
                     icon = Icons.Default.Storage,
-                    title = "暂无挂载 Profile",
-                    message = "点击“创建挂载”将云存储挂载到 Android 文件系统 (/mnt/rclone-* 或自定义路径)。"
+                    title = stringResource(R.string.mounts_empty_title),
+                    message = stringResource(R.string.mounts_empty_desc)
                 )
             }
         } else {
@@ -212,7 +210,7 @@ fun MountsScreen(
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
                                             Text(
-                                                text = "应用专属 (只读安全)",
+                                                text = stringResource(R.string.mount_tag_app_isolated),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onTertiaryContainer,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -222,7 +220,7 @@ fun MountsScreen(
                                 }
                             }
                             Text(
-                                "挂载点: ${mount.mountPoint}",
+                                stringResource(R.string.mount_point_label, mount.mountPoint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -233,15 +231,15 @@ fun MountsScreen(
                     val remoteDisplayName = mount.remoteName
                         ?: remotes.find { it.id == mount.remoteId }?.name
                         ?: mount.remoteId
-                    InfoRow(label = "远端源", value = "${remoteDisplayName}:${mount.remotePath}")
+                    InfoRow(label = stringResource(R.string.mount_label_remote), value = "${remoteDisplayName}:${mount.remotePath}")
                     if (mount.isolated || mount.targetPackage != null) {
-                        InfoRow(label = "隔离目标", value = mount.targetPackage ?: "专属沙盒私有目录 (Non-Broadcast)")
+                        InfoRow(label = stringResource(R.string.mount_label_target), value = mount.targetPackage ?: stringResource(R.string.mount_val_private_sandbox))
                     } else if (mount.mountPoint.startsWith("/mnt/rclone-")) {
-                        InfoRow(label = "Bind 共享路径", value = "/data/media/0/${mount.name}")
+                        InfoRow(label = stringResource(R.string.mount_label_bind_path), value = "/data/media/0/${mount.name}")
                     } else {
-                        InfoRow(label = "挂载类型", value = "直接挂载 (${mount.mountPoint})")
+                        InfoRow(label = stringResource(R.string.mount_label_type), value = stringResource(R.string.mount_val_direct, mount.mountPoint))
                     }
-                    InfoRow(label = "缓存配置", value = "${mount.cacheMode} · ${mount.cacheMaxSize} · ${mount.cacheMaxAge}")
+                    InfoRow(label = stringResource(R.string.mount_label_cache), value = "${mount.cacheMode} · ${mount.cacheMaxSize} · ${mount.cacheMaxAge}")
                     mount.pid?.let { InfoRow(label = "Worker PID", value = it.toString()) }
 
                     Row(
@@ -249,7 +247,7 @@ fun MountsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("开机自动恢复 (Enabled)", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.mount_label_boot_restore), style = MaterialTheme.typography.bodyMedium)
                         Switch(
                             checked = mount.enabled,
                             onCheckedChange = { enable ->
@@ -257,10 +255,11 @@ fun MountsScreen(
                                     val action = if (enable) "enable" else "disable"
                                     client.mountAction(mount.id, action, bearer).fold(
                                         onSuccess = {
-                                            onShowMessage("已${if (enable) "启用" else "禁用"}开机恢复")
+                                            val msg = if (enable) context.getString(R.string.mount_msg_boot_enabled) else context.getString(R.string.mount_msg_boot_disabled)
+                                            onShowMessage(msg)
                                             loadMounts()
                                         },
-                                        onFailure = { onShowMessage("操作失败: ${it.message}") }
+                                        onFailure = { onShowMessage("${context.getString(R.string.status_failed)}: ${it.message}") }
                                     )
                                 }
                             }
@@ -282,8 +281,8 @@ fun MountsScreen(
                                 onClick = {
                                     scope.launch {
                                         client.mountAction(mount.id, "start", bearer).fold(
-                                            onSuccess = { onShowMessage("已发送启动请求"); loadMounts() },
-                                            onFailure = { onShowMessage("启动失败: ${it.message}") }
+                                            onSuccess = { onShowMessage(context.getString(R.string.mount_msg_start_req)); loadMounts() },
+                                            onFailure = { onShowMessage("${context.getString(R.string.status_failed)}: ${it.message}") }
                                         )
                                     }
                                 }
@@ -300,8 +299,8 @@ fun MountsScreen(
                                 onClick = {
                                     scope.launch {
                                         client.mountAction(mount.id, "stop", bearer).fold(
-                                            onSuccess = { onShowMessage("已发送停止请求"); loadMounts() },
-                                            onFailure = { onShowMessage("停止失败: ${it.message}") }
+                                            onSuccess = { onShowMessage(context.getString(R.string.mount_msg_stop_req)); loadMounts() },
+                                            onFailure = { onShowMessage("${context.getString(R.string.status_failed)}: ${it.message}") }
                                         )
                                     }
                                 }
@@ -317,7 +316,7 @@ fun MountsScreen(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                             onClick = {
                                 if (isRunning || mount.status.uppercase() == "STARTING") {
-                                    onShowMessage("挂载正在运行中，请先停止挂载后再进行编辑修改")
+                                    onShowMessage(context.getString(R.string.mount_msg_running_cant_edit))
                                 } else {
                                     mountToEdit = mount
                                 }
@@ -355,11 +354,11 @@ fun MountsScreen(
                 scope.launch {
                     client.createMount(name, remoteId, mountPoint, bearer, remotePath, null, readOnly, mode, size, age, targetPackage, isolated).fold(
                         onSuccess = {
-                            onShowMessage("挂载配置创建成功")
+                            onShowMessage(context.getString(R.string.mount_msg_created))
                             showCreateDialog = false
                             loadMounts()
                         },
-                        onFailure = { onShowMessage("创建挂载失败: ${it.message}") }
+                        onFailure = { onShowMessage(context.getString(R.string.mount_msg_create_failed) + ": ${it.message}") }
                     )
                 }
             }
@@ -392,11 +391,11 @@ fun MountsScreen(
                         isolated = isolated
                     ).fold(
                         onSuccess = {
-                            onShowMessage("挂载配置已成功更新")
+                            onShowMessage(context.getString(R.string.mount_msg_updated))
                             mountToEdit = null
                             loadMounts()
                         },
-                        onFailure = { onShowMessage("更新挂载失败: ${it.message}") }
+                        onFailure = { onShowMessage(context.getString(R.string.mount_msg_update_failed) + ": ${it.message}") }
                     )
                 }
             }
@@ -416,13 +415,13 @@ fun MountsScreen(
                     client.deleteMount(delTarget.id, bearer).fold(
                         onSuccess = {
                             isDeleting = false
-                            onShowMessage("挂载配置已成功删除")
+                            onShowMessage(context.getString(R.string.mount_msg_deleted))
                             mountToDelete = null
                             loadMounts()
                         },
                         onFailure = {
                             isDeleting = false
-                            onShowMessage("删除挂载失败: ${it.message}")
+                            onShowMessage(context.getString(R.string.mount_msg_delete_failed) + ": ${it.message}")
                         }
                     )
                 }
@@ -508,7 +507,7 @@ fun MountEditDialog(
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "关闭",
+                                    contentDescription = stringResource(R.string.action_close),
                                     tint = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -546,7 +545,7 @@ fun MountEditDialog(
                         if (nameError != null) {
                             Text(nameError!!, color = MaterialTheme.colorScheme.error)
                         } else {
-                            Text("用于挂载管理的唯一英文标识符")
+                            Text(stringResource(R.string.mount_name_hint))
                         }
                     },
                     singleLine = true,
@@ -705,13 +704,13 @@ fun MountEditDialog(
                 OutlinedTextField(
                     value = remotePath,
                     onValueChange = { remotePath = it },
-                    label = { Text("远端子路径 (默认 /)") },
+                    label = { Text(stringResource(R.string.mount_remote_subpath_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {
                         IconButton(onClick = { showRemotePathPicker = true }) {
                             Icon(
                                 Icons.Default.FolderOpen,
-                                contentDescription = "浏览选择远端目录",
+                                contentDescription = stringResource(R.string.mount_cd_pick_remote),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -728,7 +727,7 @@ fun MountEditDialog(
                         formErrorMsg = null
                         isCustomMountPoint = true
                     },
-                    label = { Text("挂载点路径 *") },
+                    label = { Text(stringResource(R.string.mount_point_path_label)) },
                     isError = mountPointError != null,
                     supportingText = {
                         if (mountPointError != null) {
@@ -740,7 +739,7 @@ fun MountEditDialog(
                         IconButton(onClick = { showLocalMountPicker = true }) {
                             Icon(
                                 Icons.Default.FolderOpen,
-                                contentDescription = "浏览选择本地挂载目录",
+                                contentDescription = stringResource(R.string.mount_cd_pick_local),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -808,22 +807,22 @@ fun MountEditDialog(
                 if (isIsolated) {
                     Text(
                         if (currentMountPoint.contains("/Android/data/")) {
-                            "提示: 外部专属挂载点兼容播放器/模拟器等仅扫外部存储的应用，系统自动注入 .nomedia 抑制后台媒体库扫描。"
+                            stringResource(R.string.mount_hint_external_isolated)
                         } else {
-                            "提示: 专属隔离挂载仅对目标应用沙盒可见，不会向系统公共存储 (/data/media/0/*) 广播。"
+                            stringResource(R.string.mount_hint_internal_isolated)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.tertiary
                     )
                 } else if (currentMountPoint.startsWith("/mnt/rclone-")) {
                     Text(
-                        "提示: /mnt/rclone-* 会由 Magisk 自动创建 /data/media/0/${name.text.trim().ifBlank { "<name>" }} 的 bind 共享映射",
+                        stringResource(R.string.mount_hint_magisk_bind, name.text.trim().ifBlank { "<name>" }),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
                 } else if (currentMountPoint.isNotBlank()) {
                     Text(
-                        "直接挂载点: $currentMountPoint",
+                        stringResource(R.string.mount_hint_direct, currentMountPoint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )
@@ -839,7 +838,7 @@ fun MountEditDialog(
                         value = cacheMode,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("VFS 缓存模式") },
+                        label = { Text(stringResource(R.string.mount_cache_mode_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modeDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -862,8 +861,8 @@ fun MountEditDialog(
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MaterialTextField(value = cacheMaxSize, onValueChange = { cacheMaxSize = it }, label = "缓存上限 (如 32G)", modifier = Modifier.weight(1f))
-                    MaterialTextField(value = cacheMaxAge, onValueChange = { cacheMaxAge = it }, label = "最长保留 (如 36h)", modifier = Modifier.weight(1f))
+                    MaterialTextField(value = cacheMaxSize, onValueChange = { cacheMaxSize = it }, label = stringResource(R.string.mount_cache_max_size_label), modifier = Modifier.weight(1f))
+                    MaterialTextField(value = cacheMaxAge, onValueChange = { cacheMaxAge = it }, label = stringResource(R.string.mount_cache_max_age_label), modifier = Modifier.weight(1f))
                 }
 
                 Row(
@@ -875,7 +874,7 @@ fun MountEditDialog(
                         Text(stringResource(R.string.mount_read_only))
                         if (isIsolated) {
                             Text(
-                                if (readOnly) "只读安全保护中：防止目标应用被卸载时云端数据被误删" else "【高危】读写模式：目标 App 卸载时云端数据可能一并被删",
+                                if (readOnly) stringResource(R.string.mount_ro_protect_desc) else stringResource(R.string.mount_rw_warning_desc),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (readOnly) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                             )
@@ -982,7 +981,7 @@ fun MountEditDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 
@@ -1045,7 +1044,7 @@ fun MountEditDialog(
         val rName = selectedRemote?.name ?: ""
         val initialP = if (rName.isNotBlank()) "$rName:${remotePath.text.trim()}" else remotePath.text.trim()
         PathPickerDialog(
-            title = "选择远端子路径 (${rName.ifBlank { "远端" }})",
+            title = stringResource(R.string.mount_pick_remote_subpath_title, rName.ifBlank { stringResource(R.string.path_picker_tab_remote) }),
             initialPath = initialP,
             remotes = remotes,
             client = client,
@@ -1063,7 +1062,7 @@ fun MountEditDialog(
 
     if (showLocalMountPicker) {
         PathPickerDialog(
-            title = "选择本地挂载目录",
+            title = stringResource(R.string.mount_pick_local_path_title),
             initialPath = mountPoint.text.ifBlank { "/storage/emulated/0" },
             remotes = remotes,
             client = client,
@@ -1134,7 +1133,7 @@ fun AppPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择目标应用 (App)") },
+        title = { Text(stringResource(R.string.mount_select_app_title)) },
         text = {
             Column(
                 modifier = Modifier
@@ -1144,7 +1143,7 @@ fun AppPickerDialog(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("搜索应用名称或包名") },
+                    label = { Text(stringResource(R.string.mount_search_app_hint)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
@@ -1157,7 +1156,7 @@ fun AppPickerDialog(
                 } else if (filteredApps.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            "未找到相关应用",
+                            stringResource(R.string.mount_app_not_found),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1216,7 +1215,7 @@ fun AppPickerDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

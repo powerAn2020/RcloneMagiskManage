@@ -71,6 +71,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -104,6 +105,7 @@ fun FilesScreen(
     initialRemoteId: String? = null,
     onShowMessage: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var remotes by remember { mutableStateOf<List<RemoteItem>>(emptyList()) }
     var selectedRemote by remember { mutableStateOf<RemoteItem?>(null) }
@@ -133,7 +135,7 @@ fun FilesScreen(
                     files = resp.items
                 },
                 onFailure = {
-                    onShowMessage("加载文件失败: ${it.message}")
+                    onShowMessage(context.getString(R.string.files_msg_list_failed, it.message ?: ""))
                     files = emptyList()
                 }
             )
@@ -361,7 +363,7 @@ fun FilesScreen(
             OutlinedButton(
                 onClick = {
                     if (isSafeMode) {
-                        onShowMessage("安全模式已开启，禁止新建目录")
+                        onShowMessage(context.getString(R.string.files_msg_safe_mode_mkdir))
                     } else {
                         showMkdirDialog = true
                     }
@@ -378,7 +380,7 @@ fun FilesScreen(
             Button(
                 onClick = {
                     if (isSafeMode) {
-                        onShowMessage("安全模式已开启，禁止上传文件")
+                        onShowMessage(context.getString(R.string.files_msg_safe_mode_upload))
                     } else {
                         showUploadDialog = true
                     }
@@ -402,10 +404,10 @@ fun FilesScreen(
                     scope.launch {
                         client.jobAction(transfer.jobId, "cancel", bearer).fold(
                             onSuccess = {
-                                onShowMessage("已请求取消传输")
+                                onShowMessage(context.getString(R.string.files_msg_cancel_req))
                                 activeTransfer = transfer.copy(state = "CANCELLED")
                             },
-                            onFailure = { onShowMessage("取消失败: ${it.message}") }
+                            onFailure = { onShowMessage(context.getString(R.string.files_msg_cancel_failed, it.message ?: "")) }
                         )
                     }
                 },
@@ -486,7 +488,7 @@ fun FilesScreen(
                                     enabled = !isSafeMode,
                                     onClick = {
                                         if (isSafeMode) {
-                                            onShowMessage("安全模式已开启，禁止复制操作")
+                                            onShowMessage(context.getString(R.string.files_msg_safe_mode_copy))
                                             return@DropdownMenuItem
                                         }
                                         menuExpanded = false
@@ -499,7 +501,7 @@ fun FilesScreen(
                                     enabled = !isSafeMode,
                                     onClick = {
                                         if (isSafeMode) {
-                                            onShowMessage("安全模式已开启，禁止移动操作")
+                                            onShowMessage(context.getString(R.string.files_msg_safe_mode_move))
                                             return@DropdownMenuItem
                                         }
                                         menuExpanded = false
@@ -523,7 +525,7 @@ fun FilesScreen(
                                     enabled = !isSafeMode,
                                     onClick = {
                                         if (isSafeMode) {
-                                            onShowMessage("安全模式已开启，禁止删除操作")
+                                            onShowMessage(context.getString(R.string.files_msg_safe_mode_delete))
                                             return@DropdownMenuItem
                                         }
                                         menuExpanded = false
@@ -538,16 +540,17 @@ fun FilesScreen(
                                                         val token = obj.optString("confirmationToken")
                                                         val count = obj.optInt("deleted", 1)
                                                         val bytes = obj.optLong("bytes", 0L)
-                                                        val summary = "目标: $fullPath\n影响文件: $count 个" + if (bytes > 0) "\n占用大小: ${formatBytes(bytes)}" else ""
+                                                        val sizeStr = if (bytes > 0) context.getString(R.string.files_delete_summary_bytes, formatBytes(bytes)) else ""
+                                                        val summary = context.getString(R.string.files_delete_summary_format, fullPath, count, sizeStr)
                                                         if (token.isNotBlank()) {
                                                             deleteCandidate = Triple(file, token, summary)
                                                         } else {
-                                                            onShowMessage("未返回确认令牌: $preview")
+                                                            onShowMessage(context.getString(R.string.files_msg_preview_no_token, preview))
                                                         }
                                                     },
                                                     onFailure = {
                                                         isCalculatingPreview = false
-                                                        onShowMessage("删除预览失败: ${it.message}")
+                                                        onShowMessage(context.getString(R.string.files_msg_preview_failed, it.message ?: ""))
                                                     }
                                                 )
                                             }
@@ -589,28 +592,28 @@ fun FilesScreen(
                 Button(
                     onClick = {
                         if (isSafeMode) {
-                            onShowMessage("安全模式已开启，禁止新建目录")
+                            onShowMessage(context.getString(R.string.files_msg_safe_mode_mkdir))
                             showMkdirDialog = false
                             return@Button
                         }
                         val name = dirName.text.trim()
                         if (name.isBlank()) {
-                            dirNameError = "目录名称不能为空"
+                            dirNameError = context.getString(R.string.files_msg_mkdir_name_empty)
                             return@Button
                         }
                         if (selectedRemote == null) {
-                            onShowMessage("未选中有效远端")
+                            onShowMessage(context.getString(R.string.files_msg_no_valid_remote))
                             return@Button
                         }
                         val newPath = if (currentPath == "/") "/$name" else "$currentPath/$name"
                         scope.launch {
                             client.mkdir(selectedRemote!!.id, newPath, bearer).fold(
                                 onSuccess = {
-                                    onShowMessage("目录创建成功")
+                                    onShowMessage(context.getString(R.string.files_msg_mkdir_success))
                                     showMkdirDialog = false
                                     loadDirectory(selectedRemote!!.id, currentPath)
                                 },
-                                onFailure = { onShowMessage("创建目录失败: ${it.message}") }
+                                onFailure = { onShowMessage(context.getString(R.string.files_msg_mkdir_failed, it.message ?: "")) }
                             )
                         }
                     }
@@ -629,7 +632,7 @@ fun FilesScreen(
             onDismiss = { showUploadDialog = false },
             onConfirmUpload = { localPath ->
                 if (isSafeMode) {
-                    onShowMessage("安全模式已开启，禁止上传文件")
+                    onShowMessage(context.getString(R.string.files_msg_safe_mode_upload))
                     showUploadDialog = false
                     return@UploadFileDialog
                 }
@@ -639,7 +642,7 @@ fun FilesScreen(
                     scope.launch {
                         client.upload(localPath, dest, bearer).fold(
                             onSuccess = { res ->
-                                onShowMessage("已创建上传任务")
+                                onShowMessage(context.getString(R.string.files_msg_upload_task_created))
                                 showUploadDialog = false
                                 val jobId = runCatching { JSONObject(res).optString("jobId") }.getOrNull()
                                 if (!jobId.isNullOrBlank()) {
@@ -653,7 +656,7 @@ fun FilesScreen(
                                     loadDirectory(selectedRemote!!.id, currentPath)
                                 }
                             },
-                            onFailure = { onShowMessage("上传失败: ${it.message}") }
+                            onFailure = { onShowMessage(context.getString(R.string.files_transfer_failed, it.message ?: "")) }
                         )
                     }
                 }
@@ -699,11 +702,11 @@ fun FilesScreen(
                     onClick = {
                         val input = localDir.text.trim().trimEnd('/')
                         if (input.isBlank()) {
-                            localDirError = "本地下载存储路径不能为空"
+                            localDirError = context.getString(R.string.files_msg_local_path_empty)
                             return@Button
                         }
                         if (selectedRemote == null) {
-                            onShowMessage("未选中有效远端")
+                            onShowMessage(context.getString(R.string.files_msg_no_valid_remote))
                             return@Button
                         }
                         val cleanDir = if (input.endsWith("/${file.name}")) {
@@ -716,7 +719,7 @@ fun FilesScreen(
                         scope.launch {
                             client.download(remoteSrc, cleanDir, bearer).fold(
                                 onSuccess = { res ->
-                                    onShowMessage("已创建下载任务")
+                                    onShowMessage(context.getString(R.string.files_msg_download_task_created))
                                     downloadTargetFile = null
                                     val jobId = runCatching { JSONObject(res).optString("jobId") }.getOrNull()
                                     if (!jobId.isNullOrBlank()) {
@@ -728,7 +731,7 @@ fun FilesScreen(
                                         )
                                     }
                                 },
-                                onFailure = { onShowMessage("下载失败: ${it.message}") }
+                                onFailure = { onShowMessage(context.getString(R.string.files_msg_download_failed, it.message ?: "")) }
                             )
                         }
                     }
@@ -770,17 +773,17 @@ fun FilesScreen(
                 Button(
                     onClick = {
                         if (isSafeMode) {
-                            onShowMessage("安全模式已开启，禁止移动/复制操作")
+                            onShowMessage(context.getString(R.string.files_msg_safe_mode_copy))
                             moveTargetFile = null
                             return@Button
                         }
                         val dest = destInput.text.trim()
                         if (dest.isBlank()) {
-                            destInputError = "目标路径不能为空"
+                            destInputError = context.getString(R.string.files_msg_dest_path_empty)
                             return@Button
                         }
                         if (selectedRemote == null) {
-                            onShowMessage("未选中有效远端")
+                            onShowMessage(context.getString(R.string.files_msg_no_valid_remote))
                             return@Button
                         }
                         val src = "${selectedRemote!!.name}:$fullPath"
@@ -788,11 +791,11 @@ fun FilesScreen(
                             val action = if (isCopy) client.copy(src, dest, bearer) else client.move(src, dest, bearer)
                             action.fold(
                                 onSuccess = {
-                                    onShowMessage(if (isCopy) "已创建复制任务" else "已创建移动任务")
+                                    onShowMessage(if (isCopy) context.getString(R.string.files_msg_copy_task_created) else context.getString(R.string.files_msg_move_task_created))
                                     moveTargetFile = null
                                     loadDirectory(selectedRemote!!.id, currentPath)
                                 },
-                                onFailure = { onShowMessage("操作失败: ${it.message}") }
+                                onFailure = { onShowMessage(context.getString(R.string.remotes_msg_op_failed, it.message ?: "")) }
                             )
                         }
                     }
@@ -815,7 +818,7 @@ fun FilesScreen(
             isLoading = isDeleting,
             onConfirm = {
                 if (isSafeMode) {
-                    onShowMessage("安全模式已开启，禁止删除操作")
+                    onShowMessage(context.getString(R.string.files_msg_safe_mode_delete))
                     deleteCandidate = null
                     return@DangerousConfirmDialog
                 }
@@ -826,12 +829,12 @@ fun FilesScreen(
                             onSuccess = {
                                 isDeleting = false
                                 deleteCandidate = null
-                                onShowMessage("已成功删除目标: ${file.name}")
+                                onShowMessage(context.getString(R.string.files_msg_delete_success, file.name))
                                 loadDirectory(r.id, currentPath)
                             },
                             onFailure = {
                                 isDeleting = false
-                                onShowMessage("删除失败: ${it.message}")
+                                onShowMessage(context.getString(R.string.files_msg_delete_failed, it.message ?: ""))
                             }
                         )
                     }
