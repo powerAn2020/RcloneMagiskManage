@@ -1053,6 +1053,8 @@ fun SecurityScreen(
         var permissions by remember { mutableStateOf(TextFieldValue("file.read,file.write")) }
         var prefix by remember { mutableStateOf(TextFieldValue("/")) }
 
+        var permissionsError by remember { mutableStateOf<String?>(null) }
+
         LaunchedEffect(targetClient) {
             isRemotesLoading = true
             client.remotes(bearer).fold(
@@ -1090,26 +1092,44 @@ fun SecurityScreen(
                         }
                     }
 
-                    MaterialTextField(value = permissions, onValueChange = { permissions = it }, label = "权限列表 (逗号分隔: file.read,file.write,file.delete,*)")
+                    MaterialTextField(
+                        value = permissions,
+                        onValueChange = {
+                            permissions = it
+                            permissionsError = null
+                        },
+                        label = "权限列表 (逗号分隔: file.read,file.write,file.delete,*) *",
+                        isError = permissionsError != null,
+                        supportingText = {
+                            if (permissionsError != null) {
+                                Text(permissionsError!!, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    )
                     MaterialTextField(value = prefix, onValueChange = { prefix = it }, label = "允许路径前缀 (如 / 或 /photos)")
                 }
             },
             confirmButton = {
                 Button(
-                    enabled = selectedRemoteId.isNotBlank(),
                     onClick = {
                         val perms = permissions.text.trim()
                         val pfx = prefix.text.trim().ifBlank { "/" }
-                        if (selectedRemoteId.isNotBlank() && perms.isNotBlank()) {
-                            scope.launch {
-                                client.remoteAcl(targetClient.id, selectedRemoteId, perms, pfx, bearer).fold(
-                                    onSuccess = {
-                                        onShowMessage("Remote ACL 配置成功")
-                                        selectedClientForAcl = null
-                                    },
-                                    onFailure = { onShowMessage("ACL 配置失败: ${it.message}") }
-                                )
-                            }
+                        if (selectedRemoteId.isBlank()) {
+                            onShowMessage("请选择需要配置权限的目标远端")
+                            return@Button
+                        }
+                        if (perms.isBlank()) {
+                            permissionsError = "权限列表不能为空，例如 file.read,file.write"
+                            return@Button
+                        }
+                        scope.launch {
+                            client.remoteAcl(targetClient.id, selectedRemoteId, perms, pfx, bearer).fold(
+                                onSuccess = {
+                                    onShowMessage("Remote ACL 配置成功")
+                                    selectedClientForAcl = null
+                                },
+                                onFailure = { onShowMessage("ACL 配置失败: ${it.message}") }
+                            )
                         }
                     }
                 ) { Text("保存 ACL") }

@@ -83,7 +83,9 @@ fun RclonePathPickerField(
     bearer: String,
     modifier: Modifier = Modifier,
     placeholder: String? = null,
-    directoryOnly: Boolean = false
+    directoryOnly: Boolean = false,
+    isError: Boolean = false,
+    supportingText: @Composable (() -> Unit)? = null
 ) {
     var showPickerDialog by remember { mutableStateOf(false) }
 
@@ -93,6 +95,8 @@ fun RclonePathPickerField(
         label = { Text(label) },
         placeholder = placeholder?.let { { Text(it) } },
         modifier = modifier.fillMaxWidth(),
+        isError = isError,
+        supportingText = supportingText,
         trailingIcon = {
             IconButton(onClick = { showPickerDialog = true }) {
                 Icon(

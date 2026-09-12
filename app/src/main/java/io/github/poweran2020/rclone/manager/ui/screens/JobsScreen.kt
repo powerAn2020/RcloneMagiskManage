@@ -34,11 +34,14 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -423,7 +426,7 @@ fun JobsScreen(
             client = client,
             bearer = bearer,
             onDismiss = { showCreateDialog = false },
-            onSubmit = { type, src, dest, schedule, netPolicy, batPolicy, dryRun, options ->
+            onSubmit = { type, src, dest, schedule, netPolicy, batPolicy, dryRun, options, onError ->
                 scope.launch {
                     client.createJob(type, src, dest, bearer, schedule, netPolicy, batPolicy, dryRun, options).fold(
                         onSuccess = {
@@ -431,7 +434,11 @@ fun JobsScreen(
                             showCreateDialog = false
                             loadJobs()
                         },
-                        onFailure = { onShowMessage("创建任务失败: ${it.message}") }
+                        onFailure = {
+                            val msg = it.message ?: "创建任务失败"
+                            onShowMessage("创建任务失败: $msg")
+                            onError(msg)
+                        }
                     )
                 }
             }
@@ -815,7 +822,7 @@ fun CreateJobDialog(
     client: GatewayClient,
     bearer: String,
     onDismiss: () -> Unit,
-    onSubmit: (type: String, src: String, dest: String, schedule: String?, net: String?, bat: String?, dryRun: Boolean, options: JSONObject?) -> Unit
+    onSubmit: (type: String, src: String, dest: String, schedule: String?, net: String?, bat: String?, dryRun: Boolean, options: JSONObject?, onError: (String) -> Unit) -> Unit
 ) {
     var type by remember { mutableStateOf("copy") }
     var source by remember { mutableStateOf(TextFieldValue("")) }
@@ -823,6 +830,14 @@ fun CreateJobDialog(
     var networkPolicy by remember { mutableStateOf("ANY") }
     var batteryPolicy by remember { mutableStateOf("ANY") }
     var dryRun by remember { mutableStateOf(false) }
+
+    var sourceError by remember { mutableStateOf<String?>(null) }
+    var destinationError by remember { mutableStateOf<String?>(null) }
+    var customScheduleError by remember { mutableStateOf<String?>(null) }
+    var transfersError by remember { mutableStateOf<String?>(null) }
+    var checkersError by remember { mutableStateOf<String?>(null) }
+    var dialogError by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     // Schedule presets
     val schedulePresets = listOf(
@@ -855,7 +870,9 @@ fun CreateJobDialog(
     var batDropdownExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = { Text(stringResource(R.string.jobs_dialog_create_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(
@@ -864,10 +881,50 @@ fun CreateJobDialog(
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                if (dialogError != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = dialogError!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { dialogError = null },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "关闭",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Type Dropdown
                 ExposedDropdownMenuBox(
                     expanded = typeDropdownExpanded,
-                    onExpandedChange = { typeDropdownExpanded = !typeDropdownExpanded },
+                    onExpandedChange = {
+                        if (!isSubmitting) typeDropdownExpanded = !typeDropdownExpanded
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedTextField(
@@ -878,7 +935,8 @@ fun CreateJobDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .menuAnchor(),
+                        enabled = !isSubmitting
                     )
                     ExposedDropdownMenu(
                         expanded = typeDropdownExpanded,
@@ -890,6 +948,8 @@ fun CreateJobDialog(
                                 onClick = {
                                     type = item
                                     typeDropdownExpanded = false
+                                    destinationError = null
+                                    dialogError = null
                                 }
                             )
                         }
@@ -897,31 +957,57 @@ fun CreateJobDialog(
                 }
 
                 RclonePathPickerField(
-                    label = stringResource(R.string.jobs_source_label),
+                    label = stringResource(R.string.jobs_source_label) + " *",
                     value = source,
-                    onValueChange = { source = it },
+                    onValueChange = {
+                        source = it
+                        sourceError = null
+                        dialogError = null
+                    },
                     remotes = remotes,
                     client = client,
                     bearer = bearer,
-                    placeholder = "例如: remote:path 或 /sdcard/..."
+                    placeholder = "例如: remote:path 或 /sdcard/...",
+                    isError = sourceError != null,
+                    supportingText = {
+                        if (sourceError != null) {
+                            Text(sourceError!!, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text("传输源路径 (必填)")
+                        }
+                    }
                 )
 
                 if (type != "delete") {
                     RclonePathPickerField(
-                        label = stringResource(R.string.jobs_dest_label),
+                        label = stringResource(R.string.jobs_dest_label) + " *",
                         value = destination,
-                        onValueChange = { destination = it },
+                        onValueChange = {
+                            destination = it
+                            destinationError = null
+                            dialogError = null
+                        },
                         remotes = remotes,
                         client = client,
                         bearer = bearer,
-                        placeholder = "例如: remote:path 或 /sdcard/..."
+                        placeholder = "例如: remote:path 或 /sdcard/...",
+                        isError = destinationError != null,
+                        supportingText = {
+                            if (destinationError != null) {
+                                Text(destinationError!!, color = MaterialTheme.colorScheme.error)
+                            } else {
+                                Text("传输目标路径 (必填)")
+                            }
+                        }
                     )
                 }
 
                 // Schedule Dropdown
                 ExposedDropdownMenuBox(
                     expanded = scheduleDropdownExpanded,
-                    onExpandedChange = { scheduleDropdownExpanded = !scheduleDropdownExpanded },
+                    onExpandedChange = {
+                        if (!isSubmitting) scheduleDropdownExpanded = !scheduleDropdownExpanded
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedTextField(
@@ -932,7 +1018,8 @@ fun CreateJobDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = scheduleDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .menuAnchor(),
+                        enabled = !isSubmitting
                     )
                     ExposedDropdownMenu(
                         expanded = scheduleDropdownExpanded,
@@ -944,6 +1031,8 @@ fun CreateJobDialog(
                                 onClick = {
                                     selectedScheduleIndex = index
                                     scheduleDropdownExpanded = false
+                                    customScheduleError = null
+                                    dialogError = null
                                 }
                             )
                         }
@@ -953,15 +1042,27 @@ fun CreateJobDialog(
                 if (schedulePresets[selectedScheduleIndex].second == "CUSTOM") {
                     MaterialTextField(
                         value = customScheduleText,
-                        onValueChange = { customScheduleText = it },
-                        label = "自定义调度表达式 (例如: @every 30s 或 */10 * * * *)"
+                        onValueChange = {
+                            customScheduleText = it
+                            customScheduleError = null
+                            dialogError = null
+                        },
+                        label = "自定义调度表达式 (例如: @every 30s 或 */10 * * * *) *",
+                        isError = customScheduleError != null,
+                        supportingText = {
+                            if (customScheduleError != null) {
+                                Text(customScheduleError!!, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     )
                 }
 
                 // Network policy
                 ExposedDropdownMenuBox(
                     expanded = netDropdownExpanded,
-                    onExpandedChange = { netDropdownExpanded = !netDropdownExpanded },
+                    onExpandedChange = {
+                        if (!isSubmitting) netDropdownExpanded = !netDropdownExpanded
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedTextField(
@@ -972,7 +1073,8 @@ fun CreateJobDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = netDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .menuAnchor(),
+                        enabled = !isSubmitting
                     )
                     ExposedDropdownMenu(
                         expanded = netDropdownExpanded,
@@ -993,7 +1095,9 @@ fun CreateJobDialog(
                 // Battery policy
                 ExposedDropdownMenuBox(
                     expanded = batDropdownExpanded,
-                    onExpandedChange = { batDropdownExpanded = !batDropdownExpanded },
+                    onExpandedChange = {
+                        if (!isSubmitting) batDropdownExpanded = !batDropdownExpanded
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedTextField(
@@ -1004,7 +1108,8 @@ fun CreateJobDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = batDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .menuAnchor(),
+                        enabled = !isSubmitting
                     )
                     ExposedDropdownMenu(
                         expanded = batDropdownExpanded,
@@ -1028,16 +1133,50 @@ fun CreateJobDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(stringResource(R.string.jobs_dry_run_label))
-                    Switch(checked = dryRun, onCheckedChange = { dryRun = it })
+                    Switch(checked = dryRun, onCheckedChange = { dryRun = it }, enabled = !isSubmitting)
                 }
 
                 // Options
                 Text(stringResource(R.string.jobs_advanced_options), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MaterialTextField(value = transfers, onValueChange = { transfers = it }, label = "Transfers (1..32)", modifier = Modifier.weight(1f))
-                    MaterialTextField(value = checkers, onValueChange = { checkers = it }, label = "Checkers (1..64)", modifier = Modifier.weight(1f))
+                    MaterialTextField(
+                        value = transfers,
+                        onValueChange = {
+                            transfers = it
+                            transfersError = null
+                            dialogError = null
+                        },
+                        label = "Transfers (1..32)",
+                        modifier = Modifier.weight(1f),
+                        isError = transfersError != null,
+                        supportingText = {
+                            if (transfersError != null) {
+                                Text(transfersError!!, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    )
+                    MaterialTextField(
+                        value = checkers,
+                        onValueChange = {
+                            checkers = it
+                            checkersError = null
+                            dialogError = null
+                        },
+                        label = "Checkers (1..64)",
+                        modifier = Modifier.weight(1f),
+                        isError = checkersError != null,
+                        supportingText = {
+                            if (checkersError != null) {
+                                Text(checkersError!!, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    )
                 }
-                MaterialTextField(value = bwLimit, onValueChange = { bwLimit = it }, label = stringResource(R.string.jobs_bw_limit_label))
+                MaterialTextField(
+                    value = bwLimit,
+                    onValueChange = { bwLimit = it },
+                    label = stringResource(R.string.jobs_bw_limit_label)
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1045,7 +1184,7 @@ fun CreateJobDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(stringResource(R.string.jobs_overwrite_label))
-                    Switch(checked = overwrite, onCheckedChange = { overwrite = it })
+                    Switch(checked = overwrite, onCheckedChange = { overwrite = it }, enabled = !isSubmitting)
                 }
 
                 if (type == "sync") {
@@ -1055,7 +1194,7 @@ fun CreateJobDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(stringResource(R.string.jobs_delete_excluded_label))
-                        Switch(checked = deleteExcluded, onCheckedChange = { deleteExcluded = it })
+                        Switch(checked = deleteExcluded, onCheckedChange = { deleteExcluded = it }, enabled = !isSubmitting)
                     }
                 }
             }
@@ -1063,23 +1202,66 @@ fun CreateJobDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    sourceError = null
+                    destinationError = null
+                    customScheduleError = null
+                    transfersError = null
+                    checkersError = null
+                    dialogError = null
+
                     val src = source.text.trim()
                     val dest = destination.text.trim()
-                    if (src.isBlank()) return@Button
+                    var hasError = false
+
+                    if (src.isBlank()) {
+                        sourceError = "源路径不能为空，例如 remote:path 或 /sdcard/..."
+                        hasError = true
+                    }
+
+                    if (type != "delete" && dest.isBlank()) {
+                        destinationError = "目标路径不能为空，例如 remote:path 或 /sdcard/..."
+                        hasError = true
+                    }
+
+                    val isCustomSchedule = schedulePresets[selectedScheduleIndex].second == "CUSTOM"
+                    val customSchedule = customScheduleText.text.trim()
+                    if (isCustomSchedule && customSchedule.isBlank()) {
+                        customScheduleError = "请输入有效的调度表达式 (如 @every 30s 或 */10 * * * *)"
+                        hasError = true
+                    }
+
+                    val transfersVal = transfers.text.trim().toIntOrNull()
+                    if (transfers.text.isNotBlank() && (transfersVal == null || transfersVal !in 1..32)) {
+                        transfersError = "并发传输数范围为 1..32"
+                        hasError = true
+                    }
+
+                    val checkersVal = checkers.text.trim().toIntOrNull()
+                    if (checkers.text.isNotBlank() && (checkersVal == null || checkersVal !in 1..64)) {
+                        checkersError = "并发检查数范围为 1..64"
+                        hasError = true
+                    }
+
+                    if (hasError) {
+                        dialogError = "表单存在未填写或格式错误的必填项，请检查标红提示"
+                        return@Button
+                    }
+
                     val optionsObj = JSONObject().apply {
-                        transfers.text.toIntOrNull()?.let { put("transfers", it) }
-                        checkers.text.toIntOrNull()?.let { put("checkers", it) }
+                        transfersVal?.let { put("transfers", it) }
+                        checkersVal?.let { put("checkers", it) }
                         if (bwLimit.text.isNotBlank()) put("bwLimit", bwLimit.text.trim())
                         if (overwrite) put("overwrite", true)
                         if (type == "sync" && deleteExcluded) put("deleteExcluded", true)
                     }.takeIf { it.length() > 0 }
 
-                    val finalSchedule = if (schedulePresets[selectedScheduleIndex].second == "CUSTOM") {
-                        customScheduleText.text.trim().ifBlank { null }
+                    val finalSchedule = if (isCustomSchedule) {
+                        customSchedule.ifBlank { null }
                     } else {
                         schedulePresets[selectedScheduleIndex].second
                     }
 
+                    isSubmitting = true
                     onSubmit(
                         type,
                         src,
@@ -1088,15 +1270,28 @@ fun CreateJobDialog(
                         networkPolicy,
                         batteryPolicy,
                         dryRun,
-                        optionsObj
+                        optionsObj,
+                        { errMsg ->
+                            isSubmitting = false
+                            dialogError = errMsg
+                        }
                     )
-                }
+                },
+                enabled = !isSubmitting
             ) {
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text(stringResource(R.string.action_create))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(onClick = onDismiss, enabled = !isSubmitting) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

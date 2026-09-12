@@ -565,11 +565,25 @@ fun FilesScreen(
     // Dialogs
     if (showMkdirDialog) {
         var dirName by remember { mutableStateOf(TextFieldValue("")) }
+        var dirNameError by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { showMkdirDialog = false },
             title = { Text(stringResource(R.string.files_btn_mkdir), fontWeight = FontWeight.Bold) },
             text = {
-                MaterialTextField(value = dirName, onValueChange = { dirName = it }, label = stringResource(R.string.files_mkdir_name_label))
+                MaterialTextField(
+                    value = dirName,
+                    onValueChange = {
+                        dirName = it
+                        dirNameError = null
+                    },
+                    label = stringResource(R.string.files_mkdir_name_label) + " *",
+                    isError = dirNameError != null,
+                    supportingText = {
+                        if (dirNameError != null) {
+                            Text(dirNameError!!, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                )
             },
             confirmButton = {
                 Button(
@@ -580,18 +594,24 @@ fun FilesScreen(
                             return@Button
                         }
                         val name = dirName.text.trim()
-                        if (name.isNotBlank() && selectedRemote != null) {
-                            val newPath = if (currentPath == "/") "/$name" else "$currentPath/$name"
-                            scope.launch {
-                                client.mkdir(selectedRemote!!.id, newPath, bearer).fold(
-                                    onSuccess = {
-                                        onShowMessage("目录创建成功")
-                                        showMkdirDialog = false
-                                        loadDirectory(selectedRemote!!.id, currentPath)
-                                    },
-                                    onFailure = { onShowMessage("创建目录失败: ${it.message}") }
-                                )
-                            }
+                        if (name.isBlank()) {
+                            dirNameError = "目录名称不能为空"
+                            return@Button
+                        }
+                        if (selectedRemote == null) {
+                            onShowMessage("未选中有效远端")
+                            return@Button
+                        }
+                        val newPath = if (currentPath == "/") "/$name" else "$currentPath/$name"
+                        scope.launch {
+                            client.mkdir(selectedRemote!!.id, newPath, bearer).fold(
+                                onSuccess = {
+                                    onShowMessage("目录创建成功")
+                                    showMkdirDialog = false
+                                    loadDirectory(selectedRemote!!.id, currentPath)
+                                },
+                                onFailure = { onShowMessage("创建目录失败: ${it.message}") }
+                            )
                         }
                     }
                 ) { Text(stringResource(R.string.action_create)) }
@@ -644,6 +664,7 @@ fun FilesScreen(
     downloadTargetFile?.let { file ->
         val fullPath = if (currentPath == "/") "/${file.name}" else "$currentPath/${file.name}"
         var localDir by remember { mutableStateOf(TextFieldValue("/storage/emulated/0/Download")) }
+        var localDirError by remember { mutableStateOf<String?>(null) }
         val targetDir = localDir.text.trim().trimEnd('/')
         val previewFullPath = if (targetDir.endsWith("/${file.name}")) targetDir else "$targetDir/${file.name}"
         AlertDialog(
@@ -652,7 +673,20 @@ fun FilesScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.files_download_source, fullPath), style = MaterialTheme.typography.bodySmall)
-                    MaterialTextField(value = localDir, onValueChange = { localDir = it }, label = stringResource(R.string.files_download_local_dir))
+                    MaterialTextField(
+                        value = localDir,
+                        onValueChange = {
+                            localDir = it
+                            localDirError = null
+                        },
+                        label = stringResource(R.string.files_download_local_dir) + " *",
+                        isError = localDirError != null,
+                        supportingText = {
+                            if (localDirError != null) {
+                                Text(localDirError!!, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    )
                     Text(
                         stringResource(R.string.files_download_preview, previewFullPath),
                         style = MaterialTheme.typography.bodySmall,
@@ -664,32 +698,38 @@ fun FilesScreen(
                 Button(
                     onClick = {
                         val input = localDir.text.trim().trimEnd('/')
-                        if (input.isNotBlank() && selectedRemote != null) {
-                            val cleanDir = if (input.endsWith("/${file.name}")) {
-                                input.removeSuffix("/${file.name}").ifBlank { "/storage/emulated/0/Download" }
-                            } else {
-                                input
-                            }
-                            val remoteSrc = "${selectedRemote!!.name}:$fullPath"
-                            val fileName = file.name
-                            scope.launch {
-                                client.download(remoteSrc, cleanDir, bearer).fold(
-                                    onSuccess = { res ->
-                                        onShowMessage("已创建下载任务")
-                                        downloadTargetFile = null
-                                        val jobId = runCatching { JSONObject(res).optString("jobId") }.getOrNull()
-                                        if (!jobId.isNullOrBlank()) {
-                                            activeTransfer = ActiveTransfer(
-                                                jobId = jobId,
-                                                isUpload = false,
-                                                fileName = fileName,
-                                                state = "RUNNING"
-                                            )
-                                        }
-                                    },
-                                    onFailure = { onShowMessage("下载失败: ${it.message}") }
-                                )
-                            }
+                        if (input.isBlank()) {
+                            localDirError = "本地下载存储路径不能为空"
+                            return@Button
+                        }
+                        if (selectedRemote == null) {
+                            onShowMessage("未选中有效远端")
+                            return@Button
+                        }
+                        val cleanDir = if (input.endsWith("/${file.name}")) {
+                            input.removeSuffix("/${file.name}").ifBlank { "/storage/emulated/0/Download" }
+                        } else {
+                            input
+                        }
+                        val remoteSrc = "${selectedRemote!!.name}:$fullPath"
+                        val fileName = file.name
+                        scope.launch {
+                            client.download(remoteSrc, cleanDir, bearer).fold(
+                                onSuccess = { res ->
+                                    onShowMessage("已创建下载任务")
+                                    downloadTargetFile = null
+                                    val jobId = runCatching { JSONObject(res).optString("jobId") }.getOrNull()
+                                    if (!jobId.isNullOrBlank()) {
+                                        activeTransfer = ActiveTransfer(
+                                            jobId = jobId,
+                                            isUpload = false,
+                                            fileName = fileName,
+                                            state = "RUNNING"
+                                        )
+                                    }
+                                },
+                                onFailure = { onShowMessage("下载失败: ${it.message}") }
+                            )
                         }
                     }
                 ) { Text(stringResource(R.string.action_download)) }
@@ -703,13 +743,27 @@ fun FilesScreen(
     moveTargetFile?.let { (file, isCopy) ->
         val fullPath = if (currentPath == "/") "/${file.name}" else "$currentPath/${file.name}"
         var destInput by remember { mutableStateOf(TextFieldValue("${selectedRemote?.name}:$currentPath/copy_${file.name}")) }
+        var destInputError by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { moveTargetFile = null },
             title = { Text(if (isCopy) stringResource(R.string.files_copy_file_title) else stringResource(R.string.files_move_file_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.files_source_file_label, fullPath), style = MaterialTheme.typography.bodySmall)
-                    MaterialTextField(value = destInput, onValueChange = { destInput = it }, label = stringResource(R.string.files_target_path_label))
+                    MaterialTextField(
+                        value = destInput,
+                        onValueChange = {
+                            destInput = it
+                            destInputError = null
+                        },
+                        label = stringResource(R.string.files_target_path_label) + " *",
+                        isError = destInputError != null,
+                        supportingText = {
+                            if (destInputError != null) {
+                                Text(destInputError!!, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    )
                 }
             },
             confirmButton = {
@@ -721,19 +775,25 @@ fun FilesScreen(
                             return@Button
                         }
                         val dest = destInput.text.trim()
-                        if (dest.isNotBlank() && selectedRemote != null) {
-                            val src = "${selectedRemote!!.name}:$fullPath"
-                            scope.launch {
-                                val action = if (isCopy) client.copy(src, dest, bearer) else client.move(src, dest, bearer)
-                                action.fold(
-                                    onSuccess = {
-                                        onShowMessage(if (isCopy) "已创建复制任务" else "已创建移动任务")
-                                        moveTargetFile = null
-                                        loadDirectory(selectedRemote!!.id, currentPath)
-                                    },
-                                    onFailure = { onShowMessage("操作失败: ${it.message}") }
-                                )
-                            }
+                        if (dest.isBlank()) {
+                            destInputError = "目标路径不能为空"
+                            return@Button
+                        }
+                        if (selectedRemote == null) {
+                            onShowMessage("未选中有效远端")
+                            return@Button
+                        }
+                        val src = "${selectedRemote!!.name}:$fullPath"
+                        scope.launch {
+                            val action = if (isCopy) client.copy(src, dest, bearer) else client.move(src, dest, bearer)
+                            action.fold(
+                                onSuccess = {
+                                    onShowMessage(if (isCopy) "已创建复制任务" else "已创建移动任务")
+                                    moveTargetFile = null
+                                    loadDirectory(selectedRemote!!.id, currentPath)
+                                },
+                                onFailure = { onShowMessage("操作失败: ${it.message}") }
+                            )
                         }
                     }
                 ) { Text(stringResource(R.string.action_confirm_execute)) }

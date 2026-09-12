@@ -18,16 +18,21 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -199,7 +204,7 @@ fun CryptScreen(
         CreateCryptDialog(
             remotes = remotes,
             onDismiss = { showCreateDialog = false },
-            onSubmit = { name, remoteId, remotePath, password ->
+            onSubmit = { name, remoteId, remotePath, password, onError ->
                 scope.launch {
                     client.createCrypt(name, remoteId, remotePath.ifBlank { null }, password.ifBlank { null }, bearer).fold(
                         onSuccess = {
@@ -207,7 +212,11 @@ fun CryptScreen(
                             showCreateDialog = false
                             loadCrypts()
                         },
-                        onFailure = { onShowMessage("创建失败: ${it.message}") }
+                        onFailure = {
+                            val msg = it.message ?: "创建失败"
+                            onShowMessage("创建失败: $msg")
+                            onError(msg)
+                        }
                     )
                 }
             }
@@ -220,7 +229,7 @@ fun CryptScreen(
 fun CreateCryptDialog(
     remotes: List<RemoteItem>,
     onDismiss: () -> Unit,
-    onSubmit: (name: String, remoteId: String, remotePath: String, password: String) -> Unit
+    onSubmit: (name: String, remoteId: String, remotePath: String, password: String, onError: (String) -> Unit) -> Unit
 ) {
     var name by remember { mutableStateOf(TextFieldValue("")) }
     var selectedRemoteId by remember { mutableStateOf(remotes.firstOrNull()?.id ?: "") }
@@ -228,28 +237,103 @@ fun CreateCryptDialog(
     var password by remember { mutableStateOf(TextFieldValue("")) }
     var remoteDropdownExpanded by remember { mutableStateOf(false) }
 
+    var nameError by remember { mutableStateOf<String?>(null) }
+    var remoteError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var dialogError by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = { Text(stringResource(R.string.crypt_dialog_create_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                MaterialTextField(value = name, onValueChange = { name = it }, label = stringResource(R.string.crypt_profile_name_label))
+                if (dialogError != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = dialogError!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { dialogError = null },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "关闭",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                MaterialTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        nameError = null
+                        dialogError = null
+                    },
+                    label = stringResource(R.string.crypt_profile_name_label) + " *",
+                    isError = nameError != null,
+                    supportingText = {
+                        if (nameError != null) {
+                            Text(nameError!!, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text("用于加密映射的英文标识符 (必填)")
+                        }
+                    }
+                )
 
                 ExposedDropdownMenuBox(
                     expanded = remoteDropdownExpanded,
-                    onExpandedChange = { remoteDropdownExpanded = !remoteDropdownExpanded },
+                    onExpandedChange = {
+                        if (!isSubmitting) remoteDropdownExpanded = !remoteDropdownExpanded
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.name ?: stringResource(R.string.crypt_select_remote_placeholder)
+                    val currentRemoteName = remotes.find { it.id == selectedRemoteId }?.name
+                        ?: if (remotes.isEmpty()) "无可用远端，请先添加远端" else stringResource(R.string.crypt_select_remote_placeholder)
                     OutlinedTextField(
                         value = currentRemoteName,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text(stringResource(R.string.crypt_underlying_remote)) },
+                        label = { Text(stringResource(R.string.crypt_underlying_remote) + " *") },
+                        isError = remoteError != null,
+                        supportingText = {
+                            if (remoteError != null) {
+                                Text(remoteError!!, color = MaterialTheme.colorScheme.error)
+                            } else {
+                                Text("被加密的目标底层云存储")
+                            }
+                        },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = remoteDropdownExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .menuAnchor(),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !isSubmitting
                     )
                     ExposedDropdownMenu(
                         expanded = remoteDropdownExpanded,
@@ -261,34 +345,111 @@ fun CreateCryptDialog(
                                 onClick = {
                                     selectedRemoteId = r.id
                                     remoteDropdownExpanded = false
+                                    remoteError = null
+                                    dialogError = null
                                 }
                             )
                         }
                     }
                 }
 
-                MaterialTextField(value = remotePath, onValueChange = { remotePath = it }, label = stringResource(R.string.crypt_base_path_label))
+                MaterialTextField(
+                    value = remotePath,
+                    onValueChange = { remotePath = it },
+                    label = stringResource(R.string.crypt_base_path_label)
+                )
+
                 MaterialTextField(
                     value = password,
-                    onValueChange = { password = it },
-                    label = stringResource(R.string.crypt_password_label),
-                    visualTransformation = PasswordVisualTransformation()
+                    onValueChange = {
+                        password = it
+                        passwordError = null
+                        dialogError = null
+                    },
+                    label = stringResource(R.string.crypt_password_label) + " *",
+                    visualTransformation = PasswordVisualTransformation(),
+                    isError = passwordError != null,
+                    supportingText = {
+                        if (passwordError != null) {
+                            Text(passwordError!!, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text("端到端 AES 加密主密码 (必填)")
+                        }
+                    }
                 )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
+                    nameError = null
+                    remoteError = null
+                    passwordError = null
+                    dialogError = null
+
                     val n = name.text.trim()
-                    if (n.isBlank() || selectedRemoteId.isBlank()) return@Button
-                    onSubmit(n, selectedRemoteId, remotePath.text.trim(), password.text.trim())
-                }
+                    val p = password.text.trim()
+                    var hasError = false
+
+                    if (n.isBlank()) {
+                        nameError = "加密档案名称不能为空"
+                        hasError = true
+                    } else if (!n.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
+                        nameError = "档案名称仅允许字母、数字、下划线及连字符"
+                        hasError = true
+                    }
+
+                    if (remotes.isEmpty()) {
+                        remoteError = "尚未配置底层存储远端，请先前往「远端」页面添加"
+                        hasError = true
+                    } else if (selectedRemoteId.isBlank()) {
+                        remoteError = "请选择一个底层存储远端"
+                        hasError = true
+                    } else {
+                        val parentRemote = remotes.find { it.id == selectedRemoteId }
+                        if (parentRemote != null && parentRemote.name == n) {
+                            nameError = "加密档案名称不能与底层远端名称 (${parentRemote.name}) 相同"
+                            hasError = true
+                        }
+                    }
+
+                    if (p.isBlank()) {
+                        passwordError = "加密密码不能为空，用于派生端到端加密密钥"
+                        hasError = true
+                    }
+
+                    if (hasError) {
+                        dialogError = "表单存在未填写或格式错误的必填项，请检查标红提示"
+                        return@Button
+                    }
+
+                    isSubmitting = true
+                    onSubmit(
+                        n,
+                        selectedRemoteId,
+                        remotePath.text.trim().ifBlank { "/" },
+                        p,
+                        { errMsg ->
+                            isSubmitting = false
+                            dialogError = errMsg
+                        }
+                    )
+                },
+                enabled = !isSubmitting
             ) {
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text(stringResource(R.string.action_create))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(onClick = onDismiss, enabled = !isSubmitting) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

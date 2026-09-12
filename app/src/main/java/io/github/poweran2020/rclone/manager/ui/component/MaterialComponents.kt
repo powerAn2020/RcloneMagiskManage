@@ -176,7 +176,9 @@ fun MaterialTextField(
     label: String,
     singleLine: Boolean = true,
     visualTransformation: VisualTransformation = VisualTransformation.None,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isError: Boolean = false,
+    supportingText: @Composable (() -> Unit)? = null
 ) {
     OutlinedTextField(
         value = value,
@@ -185,7 +187,9 @@ fun MaterialTextField(
         singleLine = singleLine,
         visualTransformation = visualTransformation,
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        isError = isError,
+        supportingText = supportingText
     )
 }
 
