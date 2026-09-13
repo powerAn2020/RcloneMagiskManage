@@ -10,9 +10,17 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $Root = (Get-Item $PSScriptRoot).Parent.FullName
 
 # 1. Ensure NDK & Rust Toolchain Environment
-$NdkRoot = if ($env:NDK_ROOT) { $env:NDK_ROOT } else { "C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264" }
-$LlvmBin = "$NdkRoot/toolchains/llvm/prebuilt/windows-x86_64/bin"
-if (Test-Path "$LlvmBin/clang.exe") {
+$NdkRoot = if ($env:NDK_ROOT) {
+    $env:NDK_ROOT
+} elseif ($env:ANDROID_HOME -and (Test-Path "$env:ANDROID_HOME\ndk")) {
+    (Get-ChildItem "$env:ANDROID_HOME\ndk" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1).FullName
+} elseif ($env:ANDROID_SDK_ROOT -and (Test-Path "$env:ANDROID_SDK_ROOT\ndk")) {
+    (Get-ChildItem "$env:ANDROID_SDK_ROOT\ndk" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1).FullName
+} else {
+    $null
+}
+$LlvmBin = if ($NdkRoot) { "$NdkRoot/toolchains/llvm/prebuilt/windows-x86_64/bin" } else { "" }
+if ($LlvmBin -and (Test-Path "$LlvmBin/clang.exe")) {
     $env:PATH = "$LlvmBin;$env:PATH"
     $env:CC_x86_64_linux_android = "$LlvmBin/x86_64-linux-android34-clang.cmd"
     $env:CXX_x86_64_linux_android = "$LlvmBin/x86_64-linux-android34-clang++.cmd"

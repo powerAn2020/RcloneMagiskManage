@@ -3,9 +3,12 @@ param(
     [switch]$RestartService
 )
 
-$adb = "C:\Development\platform-tools\adb.exe"
-if (-not (Test-Path $adb)) {
-    $adb = "adb"
+$adb = if (Get-Command adb -ErrorAction SilentlyContinue) {
+    "adb"
+} elseif ($env:ANDROID_HOME -and (Test-Path "$env:ANDROID_HOME\platform-tools\adb.exe")) {
+    "$env:ANDROID_HOME\platform-tools\adb.exe"
+} else {
+    "adb"
 }
 
 Write-Host ">>> Deploying Rclone Root Manager module to $DeviceId..."

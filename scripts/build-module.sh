@@ -1,4 +1,4 @@
-#!/system/bin/sh
+#!/usr/bin/env bash
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 TARGET=${TARGET:-x86_64-linux-android}
@@ -20,7 +20,7 @@ elif [ -d "${ANDROID_NDK_HOME:-}" ]; then
 elif [ -d "${ANDROID_HOME:-}/ndk" ]; then
   NDK_ROOT=$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
 else
-  NDK_ROOT=${NDK_ROOT:-C:/Development/JetBrains/AndroidSDK/ndk/26.3.11579264}
+  NDK_ROOT=${NDK_ROOT:-}
 fi
 
 if [ -d "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin" ]; then
@@ -71,10 +71,6 @@ elif [ -f "$SUBMODULE_BIN_DIR/rclone" ] && [ -f "$SUBMODULE_BIN_DIR/fusermount3"
   echo "Integrating binaries from submodule build $SUBMODULE_BIN_DIR..."
   cp "$SUBMODULE_BIN_DIR/rclone" "$OUT/bin/rclone"
   cp "$SUBMODULE_BIN_DIR/fusermount3" "$OUT/bin/fusermount3"
-elif [ -f "$ROOT/scratch/unpacked_magisk_rclone/system/vendor/bin/rclone" ] && [ "$ABI" = "x86_64" ]; then
-  echo "Integrating prebuilt binaries from scratch cache..."
-  cp "$ROOT/scratch/unpacked_magisk_rclone/system/vendor/bin/rclone" "$OUT/bin/rclone"
-  cp "$ROOT/scratch/unpacked_magisk_rclone/system/vendor/bin/fusermount3" "$OUT/bin/fusermount3"
 else
   echo "⚠️ Warning: rclone and fusermount3 not found for $ABI (looked in prebuilt and submodule)"
 fi
