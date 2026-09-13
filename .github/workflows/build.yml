@@ -155,11 +155,18 @@ jobs:
           name: app-release
           path: app/build/outputs/apk/release/*.apk
 
-      - name: Upload Magisk Modules
+      - name: Upload Magisk Module (arm64)
         uses: actions/upload-artifact@v4
         with:
-          name: rclone-magisk-modules
-          path: dist/*.zip
+          name: rclone-magisk-module-arm64
+          path: dist/rclone-manager-arm64.zip
+          retention-days: 30
+
+      - name: Upload Magisk Module (x86_64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rclone-magisk-module-x86_64
+          path: dist/rclone-manager-x86_64.zip
           retention-days: 30
 
       - name: Create Release
