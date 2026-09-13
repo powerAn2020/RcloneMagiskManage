@@ -108,12 +108,13 @@ chmod 0755 "$OUT/bin/"* "$OUT/"*.sh
 [ -d "$OUT/META-INF" ] && chmod -R 0755 "$OUT/META-INF"
 
 # 7. Package flashable ZIP for Magisk / KernelSU / APatch
+mkdir -p "$ROOT/dist"
 ZIP_OUT="$ROOT/dist/rclone-manager-$TARGET.zip"
 rm -f "$ZIP_OUT"
 if command -v zip >/dev/null 2>&1; then
   (cd "$OUT" && zip -r -q "$ZIP_OUT" *)
-elif command -v powershell.exe >/dev/null 2>&1; then
-  powershell.exe -Command "[System.IO.Compression.ZipFile]::CreateFromDirectory('$OUT', '$ZIP_OUT', [System.IO.Compression.CompressionLevel]::Optimal, `$false)"
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -c "import os, zipfile; zf = zipfile.ZipFile('$ZIP_OUT', 'w', zipfile.ZIP_DEFLATED); [zf.write(os.path.join(r, f), os.path.relpath(os.path.join(r, f), '$OUT')) for r, _, fs in os.walk('$OUT') for f in fs]; zf.close()"
 elif command -v tar >/dev/null 2>&1; then
   (cd "$OUT" && tar -a -c -f "$ZIP_OUT" *)
 fi
