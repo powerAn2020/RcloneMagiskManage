@@ -10,8 +10,16 @@ use std::{
 use tokio::sync::RwLock;
 
 pub const API_VERSION: &str = "1.1.0";
-pub const DEFAULT_SOCKET: &str = "/data/adb/rclone-manage/runtime/gateway.sock";
-pub const DEFAULT_ROOT: &str = "/data/adb/rclone-manage";
+pub const DEFAULT_SOCKET: &str = if cfg!(windows) {
+    "C:\\data\\adb\\rclone-manage\\runtime\\gateway.sock"
+} else {
+    "/data/adb/rclone-manage/runtime/gateway.sock"
+};
+pub const DEFAULT_ROOT: &str = if cfg!(windows) {
+    "C:\\data\\adb\\rclone-manage"
+} else {
+    "/data/adb/rclone-manage"
+};
 pub const SCHEMA: &str = include_str!("../../schema-v1.sql");
 
 pub type Db = Arc<Mutex<Connection>>;
@@ -72,13 +80,37 @@ pub fn parse_paths(a: &[String]) -> Result<Paths> {
             "--root" | "--state-dir" => root = PathBuf::from(&a[i + 1]),
             "--legacy" => legacy = Some(PathBuf::from(&a[i + 1])),
             "--lan-addr" => {
-                lan_addr = Some(a[i + 1].parse::<SocketAddr>().map_err(|_| {
+                let addr = a[i + 1].parse::<SocketAddr>().map_err(|_| {
                     GatewayError::Message("invalid --lan-addr (expected HOST:PORT)".into())
-                })?)
+                })?;
+                if addr.ip().is_unspecified() || addr.ip().is_loopback() {
+                    return Err(GatewayError::Message(
+                        "--lan-addr must be a specific non-loopback LAN IP address".into(),
+                    ));
+                }
+                lan_addr = Some(addr);
             }
-            "--tls-cert" => tls_cert = Some(PathBuf::from(&a[i + 1])),
-            "--tls-key" => tls_key = Some(PathBuf::from(&a[i + 1])),
-            "--tls-client-ca" => tls_client_ca = Some(PathBuf::from(&a[i + 1])),
+            "--tls-cert" => {
+                let p = PathBuf::from(&a[i + 1]);
+                if !p.is_absolute() {
+                    return Err(GatewayError::Message("--tls-cert path must be absolute".into()));
+                }
+                tls_cert = Some(p);
+            }
+            "--tls-key" => {
+                let p = PathBuf::from(&a[i + 1]);
+                if !p.is_absolute() {
+                    return Err(GatewayError::Message("--tls-key path must be absolute".into()));
+                }
+                tls_key = Some(p);
+            }
+            "--tls-client-ca" => {
+                let p = PathBuf::from(&a[i + 1]);
+                if !p.is_absolute() {
+                    return Err(GatewayError::Message("--tls-client-ca path must be absolute".into()));
+                }
+                tls_client_ca = Some(p);
+            }
             x => return Err(GatewayError::Message(format!("unknown option {x}"))),
         }
         i += 2

@@ -187,7 +187,7 @@ use crate::types::*;
         assert_eq!(p.lan_addr.unwrap().port(), 8443);
         assert!(p.tls_client_ca.is_some());
         assert!(paths(&["--lan-addr".into(), "127.0.0.1:8443".into()]).is_err());
-        assert!(paths(&["--tls-cert".into(), "/tmp/server.pem".into()]).is_err());
+        assert!(paths(&["--tls-cert".into(), cert.into()]).is_err());
         assert!(
             paths(&[
                 "--lan-addr".into(),
@@ -195,7 +195,7 @@ use crate::types::*;
                 "--tls-cert".into(),
                 "server.pem".into(),
                 "--tls-key".into(),
-                "/tmp/server.key".into(),
+                key.into(),
             ])
             .is_err()
         );
@@ -204,9 +204,9 @@ use crate::types::*;
                 "--lan-addr".into(),
                 "0.0.0.0:8443".into(),
                 "--tls-cert".into(),
-                "/tmp/server.pem".into(),
+                cert.into(),
                 "--tls-key".into(),
-                "/tmp/server.key".into(),
+                key.into(),
             ])
             .is_err()
         );
