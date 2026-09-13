@@ -74,6 +74,18 @@ enum class RootStatus {
 }
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        init {
+            runCatching {
+                Shell.setDefaultBuilder(
+                    Shell.Builder.create()
+                        .setFlags(Shell.FLAG_MOUNT_MASTER)
+                        .setTimeout(45)
+                )
+            }
+        }
+    }
+
     private val client = GatewayClient()
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var tokenStore: TokenStore
@@ -92,11 +104,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        Shell.setDefaultBuilder(
-            Shell.Builder.create()
-                .setFlags(Shell.FLAG_MOUNT_MASTER)
-                .setTimeout(45)
-        )
         appPreferences = AppPreferences(this)
         val initialLang = appPreferences.getAppLanguage()
         LocaleUtil.applyLocale(this, initialLang)
