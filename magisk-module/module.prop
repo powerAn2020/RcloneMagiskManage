@@ -2,5 +2,5 @@ id=rclone-manager
 name=Android Rclone Root Manager
 version=1.2.0
 versionCode=120
-author=Android Rclone Root Manager
+author=powerAn2020
 description=All-in-One Rclone (FUSE3) and Rust Root Gateway for cloud storage management (systemless without overlay)
