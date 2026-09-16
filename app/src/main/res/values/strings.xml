@@ -575,7 +575,7 @@
     <string name="jobs_form_error_generic">表单存在未填写或格式错误的必填项，请检查标红提示</string>
 
     <!-- New Dialog &amp; Form Strings -->
-    <string name="path_picker_selected_prefix">已选: %1</string>
+    <string name="path_picker_selected_prefix">已选: %1$s</string>
     <string name="path_picker_empty_or_no_perm">目录为空或无读取权限</string>
 
     <!-- New Dialog &amp; Form Strings -->

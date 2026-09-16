@@ -69,6 +69,7 @@ import io.github.poweran2020.rclone.manager.ui.component.InfoRow
 import io.github.poweran2020.rclone.manager.ui.component.LoadingView
 import io.github.poweran2020.rclone.manager.ui.component.MaterialTextField
 import io.github.poweran2020.rclone.manager.ui.component.PathPickerDialog
+import io.github.poweran2020.rclone.manager.ui.component.PathPickerMode
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
 import android.content.pm.PackageManager
@@ -470,6 +471,12 @@ fun MountEditDialog(
 
     var showRemotePathPicker by remember { mutableStateOf(false) }
     var showLocalMountPicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(remotes) {
+        if (selectedRemoteId.isBlank() && remotes.isNotEmpty()) {
+            selectedRemoteId = remotes.first().id
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1050,9 +1057,18 @@ fun MountEditDialog(
             client = client,
             bearer = bearer,
             directoryOnly = true,
+            pickerMode = PathPickerMode.REMOTE_ONLY,
             onDismiss = { showRemotePathPicker = false },
             onConfirm = { chosen ->
-                val sub = if (chosen.contains(":")) chosen.substringAfter(":") else chosen
+                val sub = if (chosen.contains(":")) {
+                    val r = chosen.substringBefore(":")
+                    remotes.find { it.name == r }?.let {
+                        selectedRemoteId = it.id
+                        remoteError = null
+                        formErrorMsg = null
+                    }
+                    chosen.substringAfter(":")
+                } else chosen
                 val normalized = if (sub.isBlank()) "/" else if (sub.startsWith("/")) sub else "/$sub"
                 remotePath = TextFieldValue(normalized)
                 showRemotePathPicker = false
@@ -1068,6 +1084,7 @@ fun MountEditDialog(
             client = client,
             bearer = bearer,
             directoryOnly = true,
+            pickerMode = PathPickerMode.LOCAL_ONLY,
             onDismiss = { showLocalMountPicker = false },
             onConfirm = { chosen ->
                 val localP = if (chosen.contains(":")) chosen.substringAfter(":") else chosen

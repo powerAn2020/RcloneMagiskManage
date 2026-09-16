@@ -60,6 +60,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -75,6 +76,12 @@ import io.github.poweran2020.rclone.manager.data.model.formatBytes
 import io.github.poweran2020.rclone.manager.data.model.parseFileList
 import kotlinx.coroutines.launch
 
+enum class PathPickerMode {
+    BOTH,
+    REMOTE_ONLY,
+    LOCAL_ONLY
+}
+
 @Composable
 fun RclonePathPickerField(
     label: String,
@@ -87,7 +94,8 @@ fun RclonePathPickerField(
     placeholder: String? = null,
     directoryOnly: Boolean = false,
     isError: Boolean = false,
-    supportingText: @Composable (() -> Unit)? = null
+    supportingText: @Composable (() -> Unit)? = null,
+    pickerMode: PathPickerMode = PathPickerMode.BOTH
 ) {
     var showPickerDialog by remember { mutableStateOf(false) }
 
@@ -119,6 +127,7 @@ fun RclonePathPickerField(
             client = client,
             bearer = bearer,
             directoryOnly = directoryOnly,
+            pickerMode = pickerMode,
             onDismiss = { showPickerDialog = false },
             onConfirm = { chosen ->
                 onValueChange(TextFieldValue(chosen))
@@ -137,26 +146,35 @@ fun PathPickerDialog(
     client: GatewayClient,
     bearer: String,
     directoryOnly: Boolean = false,
+    pickerMode: PathPickerMode = PathPickerMode.BOTH,
     onDismiss: () -> Unit,
     onConfirm: (selectedPath: String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
 
     // Parse initial path to decide default tab and remote/path
-    val isInitialRemote = initialPath.contains(":") && !initialPath.startsWith("/")
+    val isInitialRemote = pickerMode != PathPickerMode.LOCAL_ONLY && initialPath.contains(":") && !initialPath.startsWith("/")
     val initialRemoteName = if (isInitialRemote) initialPath.substringBefore(":") else ""
     val initialRemotePath = if (isInitialRemote) {
         val p = initialPath.substringAfter(":").trim()
         if (p.startsWith("/")) p else "/$p"
     } else "/"
 
-    val initialLocalPath = if (!isInitialRemote && initialPath.isNotBlank() && initialPath.startsWith("/")) {
-        initialPath.trim()
+    val initialLocalPath = if (pickerMode == PathPickerMode.LOCAL_ONLY || (!isInitialRemote && initialPath.isNotBlank() && initialPath.startsWith("/"))) {
+        initialPath.trim().ifBlank { "/storage/emulated/0" }
     } else {
-        "/data/media/0/Download"
+        "/storage/emulated/0/Download"
     }
 
-    var mode by remember { mutableStateOf(if (isInitialRemote || remotes.isNotEmpty()) 0 else 1) }
+    var mode by remember {
+        mutableStateOf(
+            when (pickerMode) {
+                PathPickerMode.LOCAL_ONLY -> 1
+                PathPickerMode.REMOTE_ONLY -> 0
+                PathPickerMode.BOTH -> if (isInitialRemote || remotes.isNotEmpty()) 0 else 1
+            }
+        )
+    }
 
     // --- Remote State ---
     var selectedRemote by remember {
@@ -185,8 +203,10 @@ fun PathPickerDialog(
         }
     }
 
-    LaunchedEffect(selectedRemote) {
-        selectedRemote?.let { r -> loadRemoteDir(r, currentRemotePath) }
+    LaunchedEffect(selectedRemote, pickerMode) {
+        if (pickerMode != PathPickerMode.LOCAL_ONLY) {
+            selectedRemote?.let { r -> loadRemoteDir(r, currentRemotePath) }
+        }
     }
 
     // --- Local State ---
@@ -243,19 +263,21 @@ fun PathPickerDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Mode Tabs
-                TabRow(selectedTabIndex = mode, modifier = Modifier.fillMaxWidth()) {
-                    Tab(
-                        selected = mode == 0,
-                        onClick = { mode = 0 },
-                        text = { Text(stringResource(R.string.path_picker_tab_remote)) },
-                        icon = { Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    )
-                    Tab(
-                        selected = mode == 1,
-                        onClick = { mode = 1 },
-                        text = { Text(stringResource(R.string.path_picker_tab_local)) },
-                        icon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    )
+                if (pickerMode == PathPickerMode.BOTH) {
+                    TabRow(selectedTabIndex = mode, modifier = Modifier.fillMaxWidth()) {
+                        Tab(
+                            selected = mode == 0,
+                            onClick = { mode = 0 },
+                            text = { Text(stringResource(R.string.path_picker_tab_remote)) },
+                            icon = { Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        )
+                        Tab(
+                            selected = mode == 1,
+                            onClick = { mode = 1 },
+                            text = { Text(stringResource(R.string.path_picker_tab_local)) },
+                            icon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        )
+                    }
                 }
 
                 if (mode == 0) {
@@ -455,10 +477,10 @@ fun PathPickerDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         val shortcuts = listOf(
-                            "Download" to "/data/media/0/Download",
-                            "Documents" to "/data/media/0/Documents",
-                            "DCIM" to "/data/media/0/DCIM",
-                            stringResource(R.string.path_picker_internal_storage) to "/data/media/0",
+                            stringResource(R.string.path_picker_internal_storage) to "/storage/emulated/0",
+                            "Download" to "/storage/emulated/0/Download",
+                            "Documents" to "/storage/emulated/0/Documents",
+                            "DCIM" to "/storage/emulated/0/DCIM",
                             stringResource(R.string.path_picker_root_storage) to "/"
                         )
                         shortcuts.forEach { (lbl, path) ->
@@ -603,8 +625,16 @@ fun PathPickerDialog(
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.width(6.dp))
+                        val context = LocalContext.current
+                        val selectedText = remember(resolvedPath) {
+                            runCatching {
+                                context.getString(R.string.path_picker_selected_prefix, resolvedPath)
+                            }.getOrElse {
+                                "已选: $resolvedPath"
+                            }
+                        }
                         Text(
-                            text = stringResource(R.string.path_picker_selected_prefix, resolvedPath),
+                            text = selectedText,
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Medium,

@@ -74,6 +74,7 @@ import io.github.poweran2020.rclone.manager.ui.component.InfoRow
 import io.github.poweran2020.rclone.manager.ui.component.LoadingView
 import io.github.poweran2020.rclone.manager.ui.component.MaterialTextField
 import io.github.poweran2020.rclone.manager.ui.component.PathPickerDialog
+import io.github.poweran2020.rclone.manager.ui.component.PathPickerMode
 import io.github.poweran2020.rclone.manager.ui.component.PreferenceRow
 import io.github.poweran2020.rclone.manager.ui.component.SectionTitle
 import io.github.poweran2020.rclone.manager.ui.component.StatusBadge
@@ -946,6 +947,7 @@ fun SettingsScreen(
             remotes = emptyList(),
             client = client,
             bearer = bearer,
+            pickerMode = PathPickerMode.LOCAL_ONLY,
             onDismiss = { showLegacyPathPicker = false },
             onConfirm = { chosen ->
                 val p = if (chosen.contains(":")) chosen.substringAfter(":") else chosen

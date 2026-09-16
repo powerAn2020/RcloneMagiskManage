@@ -576,7 +576,7 @@
     <string name="jobs_form_error_generic">Please fix the highlighted errors before submitting</string>
 
     <!-- New Dialog &amp; Form Strings -->
-    <string name="path_picker_selected_prefix">Selected: %1</string>
+    <string name="path_picker_selected_prefix">Selected: %1$s</string>
     <string name="path_picker_empty_or_no_perm">Directory is empty or permission denied</string>
 
     <!-- New Dialog &amp; Form Strings -->
