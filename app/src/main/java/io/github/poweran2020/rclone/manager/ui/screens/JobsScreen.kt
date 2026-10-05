@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -110,6 +111,7 @@ fun JobsScreen(
     var jobs by remember { mutableStateOf<List<JobItem>>(emptyList()) }
     var remotes by remember { mutableStateOf<List<RemoteItem>>(emptyList()) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var editingJob by remember { mutableStateOf<JobItem?>(null) }
     var selectedRunsJob by remember { mutableStateOf<JobItem?>(null) }
     var jobRunsList by remember { mutableStateOf<List<JobRunItem>>(emptyList()) }
     var viewingLogJob by remember { mutableStateOf<Pair<JobItem, String>?>(null) } // JobItem to logText
@@ -239,7 +241,7 @@ fun JobsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         when (job.status.uppercase()) {
-                            "QUEUED", "STOPPED", "SUCCESS", "FAILED", "CANCELLED" -> {
+                            "CREATED", "QUEUED", "STOPPED", "SUCCESS", "FAILED", "CANCELLED" -> {
                                 Button(
                                     onClick = {
                                         scope.launch {
@@ -322,6 +324,20 @@ fun JobsScreen(
                                 Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(2.dp))
                                 Text(stringResource(R.string.action_retry))
+                            }
+                        }
+
+                        if (job.status.uppercase() !in setOf("RUNNING", "PAUSE_REQUESTED")) {
+                            OutlinedButton(
+                                onClick = {
+                                    loadRemotes()
+                                    editingJob = job
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(2.dp))
+                                Text(stringResource(R.string.action_edit))
                             }
                         }
 
@@ -418,7 +434,8 @@ fun JobsScreen(
 
     // Dialog: Create Job
     if (showCreateDialog) {
-        CreateJobDialog(
+        JobFormDialog(
+            initialJob = null,
             remotes = remotes,
             client = client,
             bearer = bearer,
@@ -434,6 +451,33 @@ fun JobsScreen(
                         onFailure = {
                             val msg = it.message ?: context.getString(R.string.jobs_msg_create_failed, "")
                             onShowMessage(context.getString(R.string.jobs_msg_create_failed, msg))
+                            onError(msg)
+                        }
+                    )
+                }
+            }
+        )
+    }
+
+    // Dialog: Edit Job
+    editingJob?.let { targetJob ->
+        JobFormDialog(
+            initialJob = targetJob,
+            remotes = remotes,
+            client = client,
+            bearer = bearer,
+            onDismiss = { editingJob = null },
+            onSubmit = { type, src, dest, schedule, netPolicy, batPolicy, dryRun, options, onError ->
+                scope.launch {
+                    client.updateJob(targetJob.id, type, src, dest, bearer, schedule, netPolicy, batPolicy, dryRun, options).fold(
+                        onSuccess = {
+                            onShowMessage(context.getString(R.string.jobs_msg_updated))
+                            editingJob = null
+                            loadJobs()
+                        },
+                        onFailure = {
+                            val msg = it.message ?: context.getString(R.string.jobs_msg_update_failed, "")
+                            onShowMessage(context.getString(R.string.jobs_msg_update_failed, msg))
                             onError(msg)
                         }
                     )
@@ -814,7 +858,8 @@ fun JobsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateJobDialog(
+fun JobFormDialog(
+    initialJob: JobItem? = null,
     remotes: List<RemoteItem>,
     client: GatewayClient,
     bearer: String,
@@ -822,12 +867,13 @@ fun CreateJobDialog(
     onSubmit: (type: String, src: String, dest: String, schedule: String?, net: String?, bat: String?, dryRun: Boolean, options: JSONObject?, onError: (String) -> Unit) -> Unit
 ) {
     val context = LocalContext.current
-    var type by remember { mutableStateOf("copy") }
-    var source by remember { mutableStateOf(TextFieldValue("")) }
-    var destination by remember { mutableStateOf(TextFieldValue("")) }
-    var networkPolicy by remember { mutableStateOf("ANY") }
-    var batteryPolicy by remember { mutableStateOf("ANY") }
-    var dryRun by remember { mutableStateOf(false) }
+    val isEditing = initialJob != null
+    var type by remember(initialJob) { mutableStateOf(initialJob?.type ?: "copy") }
+    var source by remember(initialJob) { mutableStateOf(TextFieldValue(initialJob?.source ?: "")) }
+    var destination by remember(initialJob) { mutableStateOf(TextFieldValue(initialJob?.destination ?: "")) }
+    var networkPolicy by remember(initialJob) { mutableStateOf(initialJob?.networkPolicy ?: "ANY") }
+    var batteryPolicy by remember(initialJob) { mutableStateOf(initialJob?.batteryPolicy ?: "ANY") }
+    var dryRun by remember(initialJob) { mutableStateOf(initialJob?.dryRun ?: false) }
 
     var sourceError by remember { mutableStateOf<String?>(null) }
     var destinationError by remember { mutableStateOf<String?>(null) }
@@ -848,16 +894,35 @@ fun CreateJobDialog(
         Pair(stringResource(R.string.jobs_sched_daily), "@daily"),
         Pair(stringResource(R.string.jobs_sched_custom), "CUSTOM")
     )
-    var selectedScheduleIndex by remember { mutableStateOf(0) }
-    var customScheduleText by remember { mutableStateOf(TextFieldValue("")) }
+    val (initScheduleIdx, initCustomText) = remember(initialJob) {
+        val sched = initialJob?.schedule?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        if (sched == null) {
+            0 to ""
+        } else {
+            val idx = schedulePresets.indexOfFirst { it.second == sched }
+            if (idx >= 0) {
+                idx to ""
+            } else {
+                schedulePresets.indexOfFirst { it.second == "CUSTOM" }.coerceAtLeast(0) to sched
+            }
+        }
+    }
+    var selectedScheduleIndex by remember(initialJob) { mutableStateOf(initScheduleIdx) }
+    var customScheduleText by remember(initialJob) { mutableStateOf(TextFieldValue(initCustomText)) }
     var scheduleDropdownExpanded by remember { mutableStateOf(false) }
 
     // Advanced options
-    var transfers by remember { mutableStateOf(TextFieldValue("4")) }
-    var checkers by remember { mutableStateOf(TextFieldValue("8")) }
-    var bwLimit by remember { mutableStateOf(TextFieldValue("")) }
-    var overwrite by remember { mutableStateOf(false) }
-    var deleteExcluded by remember { mutableStateOf(false) }
+    val initialTransfers = initialJob?.options?.optInt("transfers")?.takeIf { it > 0 }?.toString() ?: "4"
+    val initialCheckers = initialJob?.options?.optInt("checkers")?.takeIf { it > 0 }?.toString() ?: "8"
+    val initialBwLimit = initialJob?.options?.optString("bwLimit")?.takeIf { it.isNotBlank() && it != "null" } ?: ""
+    val initialOverwrite = initialJob?.options?.optBoolean("overwrite", false) ?: false
+    val initialDeleteExcluded = initialJob?.options?.optBoolean("deleteExcluded", false) ?: false
+
+    var transfers by remember(initialJob) { mutableStateOf(TextFieldValue(initialTransfers)) }
+    var checkers by remember(initialJob) { mutableStateOf(TextFieldValue(initialCheckers)) }
+    var bwLimit by remember(initialJob) { mutableStateOf(TextFieldValue(initialBwLimit)) }
+    var overwrite by remember(initialJob) { mutableStateOf(initialOverwrite) }
+    var deleteExcluded by remember(initialJob) { mutableStateOf(initialDeleteExcluded) }
 
     val jobTypes = listOf("copy", "sync", "move", "bisync", "delete")
     val netPolicies = listOf("ANY", "WIFI", "UNMETERED", "VPN")
@@ -871,7 +936,12 @@ fun CreateJobDialog(
         onDismissRequest = {
             if (!isSubmitting) onDismiss()
         },
-        title = { Text(stringResource(R.string.jobs_dialog_create_title), fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                if (isEditing) stringResource(R.string.jobs_dialog_edit_title) else stringResource(R.string.jobs_dialog_create_title),
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -1285,7 +1355,7 @@ fun CreateJobDialog(
                     )
                     Spacer(Modifier.width(6.dp))
                 }
-                Text(stringResource(R.string.action_create))
+                Text(if (isEditing) stringResource(R.string.action_save) else stringResource(R.string.action_create))
             }
         },
         dismissButton = {

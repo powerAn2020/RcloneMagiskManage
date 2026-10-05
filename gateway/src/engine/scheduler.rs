@@ -27,9 +27,11 @@ pub fn process_kill_command() -> std::process::Command {
 
 pub fn job(c: &Connection, id: &str) -> Result<Job> {
     c.query_row(
-        "SELECT id,type,status,source,destination,dry_run,schedule,next_run_at FROM job WHERE id=?",
+        "SELECT id,type,status,source,destination,dry_run,schedule,next_run_at,network_policy,battery_policy,options_json FROM job WHERE id=?",
         params![id],
         |r| {
+            let opts_str: Option<String> = r.get(10)?;
+            let options = opts_str.and_then(|s| serde_json::from_str(&s).ok());
             Ok(Job {
                 id: r.get(0)?,
                 job_type: r.get(1)?,
@@ -39,6 +41,9 @@ pub fn job(c: &Connection, id: &str) -> Result<Job> {
                 dry_run: r.get::<_, i64>(5)? != 0,
                 schedule: r.get(6)?,
                 next_run_at: r.get(7)?,
+                network_policy: r.get(8)?,
+                battery_policy: r.get(9)?,
+                options,
             })
         },
     )

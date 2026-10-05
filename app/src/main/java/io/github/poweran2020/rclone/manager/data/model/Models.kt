@@ -220,6 +220,9 @@ data class JobItem(
     val dryRun: Boolean,
     val schedule: String?,
     val nextRunAt: Long?,
+    val networkPolicy: String? = null,
+    val batteryPolicy: String? = null,
+    val options: JSONObject? = null,
 )
 
 fun parseJobs(raw: String): List<JobItem> = runCatching {
@@ -245,6 +248,9 @@ fun parseJobs(raw: String): List<JobItem> = runCatching {
                     dryRun = item.optBoolean("dryRun", false),
                     schedule = item.optNullableString("schedule"),
                     nextRunAt = if (item.has("nextRunAt") && !item.isNull("nextRunAt")) item.optLong("nextRunAt") else null,
+                    networkPolicy = item.optNullableString("networkPolicy"),
+                    batteryPolicy = item.optNullableString("batteryPolicy"),
+                    options = item.optJSONObject("options"),
                 )
             )
         }

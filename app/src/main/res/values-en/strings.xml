@@ -297,6 +297,7 @@
     <string name="jobs_log_mode_terminal">Terminal</string>
     <string name="jobs_log_mode_raw">Raw JSON</string>
     <string name="jobs_dialog_create_title">Create Task</string>
+    <string name="jobs_dialog_edit_title">Edit Task</string>
     <string name="jobs_type_label">Task Type</string>
     <string name="jobs_source_label">Source Path</string>
     <string name="jobs_dest_label">Destination Path</string>
@@ -516,6 +517,8 @@
     <string name="jobs_sched_custom_label">Custom Cron Expression (e.g. @every 30s or */10 * * * *) *</string>
     <string name="jobs_msg_created">Task created successfully</string>
     <string name="jobs_msg_create_failed">Failed to create task</string>
+    <string name="jobs_msg_updated">Task updated successfully</string>
+    <string name="jobs_msg_update_failed">Failed to update task</string>
     <string name="jobs_msg_started">Task started</string>
     <string name="jobs_msg_start_failed">Failed to start task</string>
     <string name="jobs_msg_paused">Task paused</string>

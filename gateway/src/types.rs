@@ -168,6 +168,12 @@ pub struct Job {
     pub dry_run: bool,
     pub schedule: Option<String>,
     pub next_run_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_policy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery_policy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]

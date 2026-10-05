@@ -104,7 +104,10 @@ pub fn app_router(s: AppState) -> Router {
         .route("/api/v1/files/upload", post(files_upload))
         .route("/api/v1/files/download", post(files_download))
         .route("/api/v1/jobs", get(jobs).post(job_create))
-        .route("/api/v1/jobs/{id}", get(job_get).delete(job_delete))
+        .route(
+            "/api/v1/jobs/{id}",
+            get(job_get).put(job_update).delete(job_delete),
+        )
         .route("/api/v1/jobs/{id}/runs", get(job_runs))
         .route("/api/v1/jobs/{id}/log", get(job_log))
         .route("/api/v1/jobs/{id}/{action}", post(job_action))

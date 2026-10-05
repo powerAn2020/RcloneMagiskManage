@@ -775,6 +775,7 @@ pub struct RemoteTestConfigIn {
     pub remote_type: String,
     pub endpoint: Option<String>,
     pub secret: Option<serde_json::Value>,
+    pub remote_id: Option<String>,
 }
 
 pub async fn remote_test_config(
@@ -784,12 +785,50 @@ pub async fn remote_test_config(
 ) -> Result<Json<serde_json::Value>> {
     let c = scope(&h, &s, "remote.read")?;
     validate_identity(&i.name, "remote name", 128)?;
+
+    // Merge existing secrets if remote_id is provided
+    let mut merged_obj = serde_json::Map::new();
+    if let Some(ref rid) = i.remote_id {
+        let old_secret_ref: Option<String> = db(&s)?
+            .query_row(
+                "SELECT secret_ref FROM remote WHERE id=?",
+                params![rid],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+
+        if let Some(ref old_sr) = old_secret_ref {
+            if let Ok(old_sec) = crate::security::crypto::decrypt_secret(&s.root, old_sr, rid) {
+                if let Some(old_map) = old_sec.as_object() {
+                    merged_obj = old_map.clone();
+                }
+            }
+        }
+    }
+
+    if let Some(new_map) = i.secret.as_ref().and_then(|v| v.as_object()) {
+        for (k, v) in new_map {
+            let val_str = v.as_str().unwrap_or("");
+            if val_str.trim().is_empty() && crate::security::crypto::is_rclone_password_key(k) {
+                continue;
+            }
+            merged_obj.insert(k.clone(), v.clone());
+        }
+    }
+
+    let secret_to_use = if !merged_obj.is_empty() {
+        Some(serde_json::Value::Object(merged_obj))
+    } else {
+        i.secret.clone()
+    };
+
     let path = materialize_adhoc_remote_config(
         &s,
         &i.name,
         &i.remote_type,
         i.endpoint.as_deref(),
-        i.secret.as_ref(),
+        secret_to_use.as_ref(),
     )?;
     let config = TempConfig(Some(path));
     let o = rclone_command(&config.0)

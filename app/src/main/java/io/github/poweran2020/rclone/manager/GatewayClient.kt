@@ -39,6 +39,9 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun createJob(type: String, source: String, destination: String, token: String, schedule: String? = null, networkPolicy: String? = null, batteryPolicy: String? = null, dryRun: Boolean = false, options: JSONObject? = null): Result<String> =
         request("POST", "/api/v1/jobs", token, JSONObject().put("type", type).put("source", source).put("destination", destination).put("dryRun", dryRun).apply { if (!schedule.isNullOrBlank()) put("schedule", schedule); if (!networkPolicy.isNullOrBlank()) put("networkPolicy", networkPolicy); if (!batteryPolicy.isNullOrBlank()) put("batteryPolicy", batteryPolicy); if (options != null) put("options", options) })
 
+    suspend fun updateJob(id: String, type: String, source: String, destination: String, token: String, schedule: String? = null, networkPolicy: String? = null, batteryPolicy: String? = null, dryRun: Boolean = false, options: JSONObject? = null): Result<String> =
+        request("PUT", "/api/v1/jobs/${encode(id)}", token, JSONObject().put("type", type).put("source", source).put("destination", destination).put("dryRun", dryRun).apply { if (!schedule.isNullOrBlank()) put("schedule", schedule); if (!networkPolicy.isNullOrBlank()) put("networkPolicy", networkPolicy); if (!batteryPolicy.isNullOrBlank()) put("batteryPolicy", batteryPolicy); if (options != null) put("options", options) })
+
     suspend fun job(id: String, token: String): Result<String> =
         request("GET", "/api/v1/jobs/${encode(id)}", token)
 
@@ -89,12 +92,13 @@ class GatewayClient(private val socket: String = "/data/adb/rclone-manage/runtim
     suspend fun testRemote(id: String, token: String): Result<String> =
         request("POST", "/api/v1/remotes/${java.net.URLEncoder.encode(id, "UTF-8")}/test", token)
 
-    suspend fun testRemoteConfig(name: String, type: String, endpoint: String?, secret: JSONObject?, token: String): Result<String> =
+    suspend fun testRemoteConfig(name: String, type: String, endpoint: String?, secret: JSONObject?, token: String, remoteId: String? = null): Result<String> =
         request("POST", "/api/v1/remotes/test-config", token, JSONObject().apply {
             put("name", name)
             put("type", type)
             if (!endpoint.isNullOrBlank()) put("endpoint", endpoint)
             if (secret != null && secret.length() > 0) put("secret", secret)
+            if (!remoteId.isNullOrBlank()) put("remoteId", remoteId)
         })
 
     suspend fun createBackup(token: String): Result<String> = request("POST", "/api/v1/system/backups", token)

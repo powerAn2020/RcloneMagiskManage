@@ -297,6 +297,7 @@
     <string name="jobs_log_mode_terminal">控制台</string>
     <string name="jobs_log_mode_raw">原始 JSON</string>
     <string name="jobs_dialog_create_title">创建任务</string>
+    <string name="jobs_dialog_edit_title">编辑任务</string>
     <string name="jobs_type_label">任务类型</string>
     <string name="jobs_source_label">源路径</string>
     <string name="jobs_dest_label">目标路径</string>
@@ -515,6 +516,8 @@
     <string name="jobs_sched_custom_label">自定义调度表达式 (例如: @every 30s 或 */10 * * * *) *</string>
     <string name="jobs_msg_created">任务已成功创建</string>
     <string name="jobs_msg_create_failed">创建任务失败</string>
+    <string name="jobs_msg_updated">任务已成功更新</string>
+    <string name="jobs_msg_update_failed">更新任务失败</string>
     <string name="jobs_msg_started">任务已启动</string>
     <string name="jobs_msg_start_failed">启动任务失败</string>
     <string name="jobs_msg_paused">任务已暂停</string>

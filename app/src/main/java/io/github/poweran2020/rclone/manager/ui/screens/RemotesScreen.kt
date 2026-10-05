@@ -419,6 +419,7 @@ fun RemotesScreen(
 
     editingRemote?.let { remote ->
         RemoteFormDialog(
+            remoteId = remote.id,
             title = "${stringResource(R.string.remotes_dialog_edit_title)}: ${remote.name}",
             initialName = remote.name,
             initialType = remote.type,
@@ -584,6 +585,7 @@ enum class RemoteTestState {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RemoteFormDialog(
+    remoteId: String? = null,
     title: String,
     initialName: String,
     initialType: String,
@@ -716,7 +718,7 @@ fun RemoteFormDialog(
         val secret = buildSecretObject()
 
         scope.launch {
-            client.testRemoteConfig(name.text.trim(), type.trim(), endpointVal.ifBlank { null }, secret, bearer).fold(
+            client.testRemoteConfig(name.text.trim(), type.trim(), endpointVal.ifBlank { null }, secret, bearer, remoteId = remoteId).fold(
                 onSuccess = { res ->
                     val json = runCatching { JSONObject(res) }.getOrNull()
                     val ok = json?.optBoolean("ok", false) ?: false

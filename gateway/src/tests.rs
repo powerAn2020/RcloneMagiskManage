@@ -1200,6 +1200,24 @@ info line"#,
         assert_eq!(sec_blob["user"], "newuser");
         assert_eq!(sec_blob["pass"], "secret123");
 
+        // 4b. Test remote_test_config with remote_id and empty pass merges old password
+        let test_cfg_res = remote_test_config(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Json(RemoteTestConfigIn {
+                name: "myremote".into(),
+                remote_type: "webdav".into(),
+                endpoint: Some("https://dav.example.com".into()),
+                secret: Some(serde_json::json!({
+                    "user": "newuser",
+                    "pass": ""
+                })),
+                remote_id: Some(remote_id.clone()),
+            }),
+        )
+        .await;
+        assert!(test_cfg_res.is_ok());
+
         // 5. Test remote_export with full and redacted INI/JSON
         let exported = crate::api::remotes::remote_export(
             axum::extract::State(state.clone()),
@@ -1792,5 +1810,157 @@ info line"#,
 
         let _ = fs::remove_dir_all(&state.root);
     }
+
+    #[tokio::test]
+    async fn job_lifecycle_create_update_get_delete() {
+        let root = std::env::temp_dir().join(format!("rclone-job-test-{}", Uuid::new_v4()));
+        ensure_dirs(&root).unwrap();
+
+        let state = AppState {
+            db: open_db(&root).unwrap(),
+            root: root.clone(),
+            pairing: Arc::new(RwLock::new(HashMap::new())),
+            pairing_failures: Arc::new(RwLock::new(HashMap::new())),
+            require_signature: false,
+        };
+
+        let token = "test_job_token";
+        let token_h = hash(token);
+        let t = now();
+        {
+            let conn = state.db.lock().unwrap();
+            conn.execute(
+                "INSERT INTO client(id,name,token_hash,status,created_at) VALUES('c_job','test',?,'ACTIVE',?)",
+                params![token_h, t],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO permission_grant(client_id,scope,resource,expires_at) VALUES('c_job','*','*',NULL)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        // Create remote for job
+        let _ = remote_create(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Json(RemoteIn {
+                name: "jobremote".into(),
+                remote_type: "alias".into(),
+                endpoint: None,
+                base_path: None,
+                enabled: Some(true),
+                secret: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        // 1. Create job
+        let create_res = job_create(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Json(JobIn {
+                job_type: "copy".into(),
+                source: "jobremote:/src".into(),
+                destination: "jobremote:/dest".into(),
+                schedule: Some("@daily".into()),
+                network_policy: Some("WIFI".into()),
+                battery_policy: Some("CHARGING".into()),
+                options: Some(serde_json::json!({
+                    "transfers": 4,
+                    "checkers": 8
+                })),
+                dry_run: Some(false),
+            }),
+        )
+        .await
+        .unwrap()
+        .1
+        .0;
+
+        let job_id = create_res.id.clone();
+        assert_eq!(create_res.job_type, "copy");
+        assert_eq!(create_res.status, "CREATED");
+        assert_eq!(create_res.network_policy.as_deref(), Some("WIFI"));
+        assert_eq!(create_res.battery_policy.as_deref(), Some("CHARGING"));
+
+        // 2. job_get
+        let get_res = job_get(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(job_id.clone()),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(get_res.id, job_id);
+        assert_eq!(get_res.schedule.as_deref(), Some("@daily"));
+        assert_eq!(get_res.network_policy.as_deref(), Some("WIFI"));
+
+        // 3. job_update
+        let update_res = job_update(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(job_id.clone()),
+            axum::extract::Json(JobIn {
+                job_type: "sync".into(),
+                source: "jobremote:/src_updated".into(),
+                destination: "jobremote:/dest_updated".into(),
+                schedule: Some("@hourly".into()),
+                network_policy: Some("ANY".into()),
+                battery_policy: Some("ANY".into()),
+                options: Some(serde_json::json!({
+                    "transfers": 8,
+                    "checkers": 16,
+                    "deleteExcluded": true
+                })),
+                dry_run: Some(true),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert_eq!(update_res.job_type, "sync");
+        assert_eq!(update_res.source, "jobremote:/src_updated");
+        assert_eq!(update_res.destination, "jobremote:/dest_updated");
+        assert_eq!(update_res.schedule.as_deref(), Some("@hourly"));
+        assert_eq!(update_res.network_policy.as_deref(), Some("ANY"));
+        assert!(update_res.dry_run);
+
+        // 4. jobs list
+        let list_res = jobs(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Query(JobQuery {
+                status: None,
+                job_type: None,
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(list_res.len(), 1);
+        assert_eq!(list_res[0].id, job_id);
+        assert_eq!(list_res[0].job_type, "sync");
+
+        // 5. job_delete
+        let del_res = job_delete(
+            axum::extract::State(state.clone()),
+            h.clone(),
+            axum::extract::Path(job_id.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(del_res, axum::http::StatusCode::NO_CONTENT);
+
+        let _ = fs::remove_dir_all(&state.root);
+    }
+
 
 

@@ -21,9 +21,11 @@ pub async fn jobs(
 ) -> Result<Json<Vec<Job>>> {
     let client = scope(&h, &s, "job.read")?;
     let c = db(&s)?;
-    let mut st = c.prepare("SELECT id,type,status,source,destination,dry_run,schedule,next_run_at FROM job WHERE (?1 IS NULL OR status=?1) AND (?2 IS NULL OR type=?2) ORDER BY created_at DESC")?;
+    let mut st = c.prepare("SELECT id,type,status,source,destination,dry_run,schedule,next_run_at,network_policy,battery_policy,options_json FROM job WHERE (?1 IS NULL OR status=?1) AND (?2 IS NULL OR type=?2) ORDER BY created_at DESC")?;
     let rows = st
         .query_map(params![q.status, q.job_type], |r| {
+            let opts_str: Option<String> = r.get(10)?;
+            let options = opts_str.and_then(|s| serde_json::from_str(&s).ok());
             Ok(Job {
                 id: r.get(0)?,
                 job_type: r.get(1)?,
@@ -33,6 +35,9 @@ pub async fn jobs(
                 dry_run: r.get::<_, i64>(5)? != 0,
                 schedule: r.get(6)?,
                 next_run_at: r.get(7)?,
+                network_policy: r.get(8)?,
+                battery_policy: r.get(9)?,
+                options,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -45,12 +50,7 @@ pub async fn jobs(
     ))
 }
 
-pub async fn job_create(
-    State(s): State<AppState>,
-    h: HeaderMap,
-    Json(i): Json<JobIn>,
-) -> Result<(StatusCode, Json<Job>)> {
-    let c = scope(&h, &s, "job.execute")?;
+fn validate_job_spec(s: &AppState, c: &str, i: &JobIn) -> Result<()> {
     if !["copy", "sync", "move", "bisync", "delete"].contains(&i.job_type.as_str()) {
         return Err(GatewayError::Message("unsupported job type".into()));
     }
@@ -126,8 +126,8 @@ pub async fn job_create(
         return Err(GatewayError::Message("PATH_DENIED: traversal".into()));
     }
     validate_transfer_endpoint(
-        &s,
-        &c,
+        s,
+        c,
         &i.source,
         if i.job_type == "delete" {
             "file.delete"
@@ -141,8 +141,18 @@ pub async fn job_create(
         ));
     }
     if !i.destination.is_empty() {
-        validate_transfer_endpoint(&s, &c, &i.destination, "file.write")?;
+        validate_transfer_endpoint(s, c, &i.destination, "file.write")?;
     }
+    Ok(())
+}
+
+pub async fn job_create(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<JobIn>,
+) -> Result<(StatusCode, Json<Job>)> {
+    let c = scope(&h, &s, "job.execute")?;
+    validate_job_spec(&s, &c, &i)?;
     let id = Uuid::new_v4().to_string();
     let t = now();
     let interval = schedule_interval(i.schedule.as_deref());
@@ -169,6 +179,57 @@ pub async fn job_create(
     audit(&s, Some(&c), "job.create", Some(&id), None, "SUCCESS", None)?;
     let conn = db(&s)?;
     Ok((StatusCode::ACCEPTED, Json(job(&conn, &id)?)))
+}
+
+pub async fn job_update(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(i): Json<JobIn>,
+) -> Result<Json<Job>> {
+    let c = scope(&h, &s, "job.control")?;
+    job_accessible(&s, &c, &id)?;
+
+    let current_status: String = {
+        let conn = db(&s)?;
+        conn.query_row("SELECT status FROM job WHERE id=?", params![id], |r| {
+            r.get(0)
+        })
+        .map_err(|_| GatewayError::Message("job not found".into()))?
+    };
+
+    if matches!(current_status.as_str(), "RUNNING" | "PAUSE_REQUESTED") {
+        return Err(GatewayError::Message(
+            "job is currently active, please pause or cancel it before editing".into(),
+        ));
+    }
+
+    validate_job_spec(&s, &c, &i)?;
+
+    let t = now();
+    let interval = schedule_interval(i.schedule.as_deref());
+    let next = interval.map(|d| now() + d);
+
+    db(&s)?.execute(
+        "UPDATE job SET type=?,source=?,destination=?,schedule=?,network_policy=?,battery_policy=?,options_json=?,dry_run=?,updated_at=?,next_run_at=? WHERE id=?",
+        params![
+            i.job_type,
+            i.source,
+            i.destination,
+            i.schedule,
+            i.network_policy.unwrap_or_else(|| "ANY".into()),
+            i.battery_policy.unwrap_or_else(|| "ANY".into()),
+            i.options.map(|v| v.to_string()),
+            i.dry_run.unwrap_or(false) as i64,
+            t,
+            next,
+            id,
+        ],
+    )?;
+
+    audit(&s, Some(&c), "job.update", Some(&id), None, "SUCCESS", None)?;
+    let conn = db(&s)?;
+    Ok(Json(job(&conn, &id)?))
 }
 
 pub async fn job_get(
